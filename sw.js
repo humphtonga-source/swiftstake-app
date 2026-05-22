@@ -1,23 +1,23 @@
 const CACHE_NAME = 'swiftstake-v1';
 const ASSETS = [
-  '/swiftstak-app/',
-  '/swiftstak-app/index.html',
-  '/swiftstak-app/css/styles.css',
-  '/swiftstak-app/js/config.js',
-  '/swiftstak-app/js/db.js',
-  '/swiftstak-app/js/auth.js',
-  '/swiftstak-app/js/ui.js',
-  '/swiftstak-app/js/dashboard.js',
-  '/swiftstak-app/js/finance.js',
-  '/swiftstak-app/js/analytics.js',
-  '/swiftstak-app/js/planning.js',
-  '/swiftstak-app/js/settings.js',
-  '/swiftstak-app/js/audit.js',
-  '/swiftstak-app/js/chat.js',
-  '/swiftstak-app/js/realtime.js',
-  '/swiftstak-app/js/history.js',
-  '/swiftstak-app/icons/icon-192x192.png',
-  '/swiftstak-app/icons/icon-512x512.png'
+  '/swiftstake-app/',
+  '/swiftstake-app/index.html',
+  '/swiftstake-app/css/styles.css',
+  '/swiftstake-app/js/config.js',
+  '/swiftstake-app/js/db.js',
+  '/swiftstake-app/js/auth.js',
+  '/swiftstake-app/js/ui.js',
+  '/swiftstake-app/js/dashboard.js',
+  '/swiftstake-app/js/finance.js',
+  '/swiftstake-app/js/analytics.js',
+  '/swiftstake-app/js/planning.js',
+  '/swiftstake-app/js/settings.js',
+  '/swiftstake-app/js/audit.js',
+  '/swiftstake-app/js/chat.js',
+  '/swiftstake-app/js/realtime.js',
+  '/swiftstake-app/js/history.js',
+  '/swiftstake-app/icons/icon-192x192.png',
+  '/swiftstake-app/icons/icon-512x512.png'
 ];
 
 // Install: cache all assets
@@ -53,7 +53,7 @@ self.addEventListener('fetch', e => {
       }).catch(() => {
         // Offline fallback for navigation requests
         if (e.request.mode === 'navigate') {
-          return caches.match('/swiftstak-app/index.html');
+          return caches.match('/swiftstake-app/index.html');
         }
       });
     })
