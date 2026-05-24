@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#111827">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>SwiftStake Manager</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.3/dist/umd/supabase.min.js"></script>
+<link rel="stylesheet" href="css/styles.css">
+<link rel="manifest" href="/swiftstake-app/manifest.json">
+<link rel="apple-touch-icon" href="/swiftstake-app/icons/icon-192x192.png">
+</head>
+<body>
+
+<!-- LOADING SCREEN -->
+<div id="loading-screen">
+  <div class="ls-logo">🎯</div>
+  <div class="ls-brand">Swift<span>Stake</span></div>
+  <div class="ls-msg" id="ls-msg">Connecting to database...</div>
+  <div class="ls-bar"><div class="ls-fill"></div></div>
+</div>
+
+<!-- LOGIN -->
+<div id="login">
+  <div class="lbox">
+    <div class="llogo">🎯</div>
+    <div class="lbrand">Swift<span>Stake</span></div>
+    <div class="lsub">Shop Management Dashboard</div>
+    <label class="lbl">Your name</label>
+    <input class="inp" id="ln-name" type="text" placeholder="e.g. Jane Kamau" autocomplete="name">
+    <label class="lbl">Your shop today</label>
+    <select class="inp" id="ln-shop"></select>
+    <label class="lbl">Sign in as</label>
+    <div class="rolegrid">
+      <div class="rolebtn sel" data-role="cashier" onclick="selRole(this)"><span class="ico">👤</span><span class="rlbl">Cashier</span></div>
+      <div class="rolebtn" data-role="admin" onclick="selRole(this)"><span class="ico">🛡️</span><span class="rlbl">Admin</span></div>
+    </div>
+    <label class="lbl" id="pinlbl">Your PIN</label>
+    <div class="pinrow">
+      <input class="pindot" type="password" maxlength="1" id="p0" oninput="pnext(0)" inputmode="numeric">
+      <input class="pindot" type="password" maxlength="1" id="p1" oninput="pnext(1)" inputmode="numeric">
+      <input class="pindot" type="password" maxlength="1" id="p2" oninput="pnext(2)" inputmode="numeric">
+      <input class="pindot" type="password" maxlength="1" id="p3" oninput="pnext(3)" inputmode="numeric">
+    </div>
+    <div id="lerr" style="display:none;" class="errtxt"></div>
+    <button class="lbtn" onclick="doLogin()">Sign In →</button>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="app">
+  <div class="topbar">
+    <button class="hbtn" onclick="toggleSB()">☰</button>
+    <div class="tbrand">Swift<span>Stake</span></div>
+    <div class="topbar-actions">
+      <button class="topbtn" onclick="toggleNotif()">🔔<span class="badge" id="belldot"></span></button>
+      <span class="userpill" id="userpill"></span>
+      <button class="signout-btn" onclick="doLogout()">Sign out</button>
+    </div>
+  </div>
+  <div class="notifpanel" id="notifpanel">
+    <div class="notifhead">Notifications <button onclick="clearNotifs()" style="font-size:11px;color:var(--txt3);background:none;border:none;cursor:pointer;">Clear all</button></div>
+    <div id="notiflist"><div class="notifempty">No notifications yet</div></div>
+  </div>
+  <div class="overlay" id="overlay" onclick="closeSB()"></div>
+  <div class="appbody">
+    <div class="sidebar" id="sidebar">
+      <div class="snav">
+        <div class="slbl">Main</div>
+        <div class="sitem act" id="nav-chat"      onclick="goTab('chat',this)">     <span class="sico">💬</span> Chat</div>
+        <div class="sitem"     id="nav-dashboard" onclick="goTab('dashboard',this)"><span class="sico">🏠</span> Dashboard</div>
+        <div class="sitem"     id="nav-planning"  onclick="goTab('planning',this)"> <span class="sico">📅</span> Planning</div>
+        <div class="sitem"     id="nav-finance"   onclick="goTab('finance',this)">  <span class="sico">📊</span> Finances</div>
+        <div class="sitem"     id="nav-analytics" onclick="goTab('analytics',this)"><span class="sico">📈</span> Analytics</div>
+        <div class="sitem"     id="nav-history"   onclick="goTab('history',this)">  <span class="sico">📋</span> History</div>
+        <div class="slbl" id="adminlbl" style="display:none;">Admin Only</div>
+        <div class="sitem" id="nav-turnover"  onclick="goTab('turnover',this)"  style="display:none;"><span class="sico">🎰</span> Game Turnover</div>
+        <div class="sitem" id="nav-aisummary" onclick="goTab('aisummary',this)" style="display:none;"><span class="sico">🤖</span> AI Summary</div>
+        <div class="sitem" id="nav-banking"   onclick="goTab('banking',this)"   style="display:none;"><span class="sico">🏦</span> Banking & Debts</div>
+        <div class="sitem" id="nav-roadmap"   onclick="goTab('roadmap',this)"   style="display:none;"><span class="sico">🗺️</span> Roadmap</div>
+        <div class="sitem" id="nav-settings"  onclick="goTab('settings',this)"  style="display:none;"><span class="sico">⚙️</span> Settings</div>
+      </div>
+    </div>
+    <div class="main">
+      <div id="pane-chat"      class="pane on"></div>
+      <div id="pane-dashboard" class="pane"></div>
+      <div id="pane-planning"  class="pane"></div>
+      <div id="pane-finance"   class="pane"></div>
+      <div id="pane-analytics" class="pane"></div>
+      <div id="pane-history"   class="pane"></div>
+      <div id="pane-turnover"  class="pane"></div>
+      <div id="pane-aisummary" class="pane"></div>
+      <div id="pane-banking"   class="pane"></div>
+      <div id="pane-roadmap"   class="pane"></div>
+      <div id="pane-settings"  class="pane"></div>
+    </div>
+  </div>
+</div>
+
+<!-- MODALS -->
+<div class="modover" id="export-modal">
+  <div class="modbox">
+    <div class="modtitle">📄 Export Report</div>
+    <div class="exptxt" id="exptxt"></div>
+    <div class="modactions">
+      <button class="modclose" onclick="closeModal('export-modal')">Close</button>
+      <button class="modcopy" onclick="copyExport()">📋 Copy</button>
+    </div>
+  </div>
+</div>
+<div class="modover" id="proj-modal">
+  <div class="modbox">
+    <div class="modtitle">🗂️ New Project</div>
+    <div class="nprojform">
+      <div><label class="fl-lbl">Project name</label><input type="text" id="proj-name" placeholder="e.g. Boost Kiawara Sales"></div>
+      <div><label class="fl-lbl">Assign to shop</label><select id="proj-shop"></select></div>
+      <div><label class="fl-lbl">Assign cashier (optional)</label><select id="proj-cashier"><option value="">— None —</option></select></div>
+      <div><label class="fl-lbl">Description</label><textarea id="proj-desc" placeholder="What does this project aim to achieve?"></textarea></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+        <div><label class="fl-lbl">Start date</label><input type="date" id="proj-start"></div>
+        <div><label class="fl-lbl">End date</label><input type="date" id="proj-end"></div>
+      </div>
+      <div><label class="fl-lbl">First milestone</label><input type="text" id="proj-ms1" placeholder="e.g. Staff training complete"></div>
+    </div>
+    <div class="modactions" style="margin-top:16px;">
+      <button class="modclose" onclick="closeModal('proj-modal')">Cancel</button>
+      <button class="goldbtn" onclick="createProject()">Create Project</button>
+    </div>
+  </div>
+</div>
+<div class="lightbox" id="lightbox" onclick="closeLightbox()">
+  <button class="lbclose">✕</button>
+  <img id="lbimg" src="" alt="">
+</div>
+<input type="file" id="photo-input" accept="image/*" multiple style="display:none;" onchange="handlePhotos(this)">
+<div id="confirm-modal">
+  <div class="inner">
+    <div id="confirm-icon" style="font-size:36px;text-align:center;margin-bottom:12px;">⚠️</div>
+    <div id="confirm-title" style="font-size:16px;font-weight:800;color:var(--txt);text-align:center;margin-bottom:8px;"></div>
+    <div id="confirm-msg" style="font-size:13px;color:var(--txt2);text-align:center;margin-bottom:20px;line-height:1.6;"></div>
+    <div id="confirm-preview" style="display:none;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius2);padding:10px;margin-bottom:16px;font-size:12px;color:var(--txt2);"></div>
+    <div style="display:flex;gap:10px;">
+      <button onclick="confirmModal.cancel()" style="flex:1;padding:12px;border:1px solid var(--border2);border-radius:var(--radius2);background:transparent;font-size:14px;font-weight:700;color:var(--txt2);cursor:pointer;">Cancel</button>
+      <button id="confirm-ok-btn" onclick="confirmModal.ok()" style="flex:1;padding:12px;border:none;border-radius:var(--radius2);background:var(--blue);color:#fff;font-size:14px;font-weight:800;cursor:pointer;">Confirm</button>
+    </div>
+  </div>
+</div>
+<div id="game-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;align-items:center;justify-content:center;backdrop-filter:blur(4px);">
+  <div style="background:var(--surface);border:1px solid var(--border2);border-radius:var(--radius3);padding:24px;max-width:380px;width:92%;margin:auto;box-shadow:0 30px 80px rgba(0,0,0,.5);max-height:85vh;overflow-y:auto;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+      <div style="font-size:16px;font-weight:800;color:var(--txt);">🎮 Manage Games</div>
+      <button onclick="closeGameModal()" style="border:none;background:var(--bg3);color:var(--txt2);font-size:18px;width:32px;height:32px;border-radius:50%;cursor:pointer;">✕</button>
+    </div>
+    <p style="font-size:12px;color:var(--txt3);margin-bottom:16px;line-height:1.6;">Add custom games with full float tracking.</p>
+    <div id="game-list-wrap" style="margin-bottom:16px;"></div>
+    <div style="display:flex;gap:8px;margin-bottom:8px;">
+      <input id="new-game-name" placeholder="Game name (e.g. Aviator)" type="text" maxlength="30" style="flex:1;border:1px solid var(--border2);border-radius:var(--radius2);padding:10px 12px;font-size:14px;outline:none;background:var(--bg2);color:var(--txt);">
+      <button onclick="addGame()" style="padding:10px 14px;background:var(--gold);color:#fff;border:none;border-radius:var(--radius2);font-size:13px;font-weight:700;cursor:pointer;">+ Add</button>
+    </div>
+    <div id="game-modal-msg" style="font-size:13px;min-height:20px;"></div>
+  </div>
+</div>
+
+<!-- JS — load in dependency order -->
+<script src="js/config.js"></script>
+<script src="js/db.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/finance.js"></script>
+<script src="js/dashboard.js"></script>
+<script src="js/analytics.js"></script>
+<script src="js/audit.js"></script>
+<script src="js/history.js"></script>
+<script src="js/planning.js"></script>
+<script src="js/settings.js"></script>
+<script src="js/chat.js"></script>
+<script src="js/realtime.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/notifications.js"></script>
+<script>bootApp();</script>
+<script>
+if("serviceWorker"in navigator)navigator.serviceWorker.register("/swiftstake-app/sw.js");
+</script>
+</body>
+</html>
