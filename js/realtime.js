@@ -87,9 +87,9 @@ function subscribeToDataChanges() {
       if (sess.isAdmin) {
         if ($('pane-dashboard') && $('pane-dashboard').classList.contains('on')) renderDashboard();
         if ($('pane-analytics') && $('pane-analytics').classList.contains('on')) setupAnalytics();
-        if ($('pane-history')   && $('pane-history').classList.contains('on'))   renderHistory();
         pushNotif('📋 New report — ' + r.shop, 'Net KES ' + (r.totals && r.totals.net != null ? fmt(r.totals.net) : '—'));
       }
+      if ($('pane-history') && $('pane-history').classList.contains('on')) renderHistory();
     })
     .subscribe();
 }
