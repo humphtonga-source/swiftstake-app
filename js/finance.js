@@ -666,6 +666,7 @@ async function submitReport() {
   alert('✅ Report submitted!\nShop: ' + activeShop + '\nNet: KES ' + fmt(net));
   _resetting = false;
   renderFinance();
+  if ($('pane-history') && $('pane-history').classList.contains('on')) renderHistory();
   setTimeout(() => {
     loadShopData(activeShop);
     const rc = $('recon-cash'), rm = $('recon-mpesa');
