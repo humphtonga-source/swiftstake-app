@@ -1,8 +1,10 @@
 // ── HISTORY ──
 function renderHistory() {
   const p = $('pane-history'); if (!p) return;
+  console.log('🔍 renderHistory called. S.reports.length:', S.reports.length, 'sess.shop:', sess.shop);
   if (!sess.perms.history) { p.innerHTML = '<div class="denied"><div class="dico">🔒</div><h3>History restricted</h3></div>'; return; }
   const rpts = sess.isAdmin ? S.reports : S.reports.filter(r => r.shop === sess.shop);
+  console.log('📋 Filtered reports:', rpts.length, 'isAdmin:', sess.isAdmin);
   let html = `<div class="ph"><div class="ph-icon">📋</div><h2>Report History</h2><div class="phr">${sess.isAdmin ? '<button class="redbtn" onclick="deleteAllHistory()">🗑️ Delete All</button>' : ''}</div></div>`;
   if (!rpts.length) { html += '<div style="text-align:center;padding:60px 20px;color:var(--txt2);">No reports yet.</div>'; }
   else {
