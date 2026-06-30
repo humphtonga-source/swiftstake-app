@@ -157,14 +157,21 @@ function renderFinance() {
       <button id="push-recon-btn" onclick="pushSection('recon')" style="margin-left:auto;padding:5px 12px;background:var(--bluel);color:var(--blue);border:1px solid rgba(59,130,246,0.3);border-radius:var(--radius2);font-size:11px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:4px;"><span>🔄</span><span>Push to Admin</span></button>
     </div>
     <div id="push-recon-status" style="font-size:11px;margin-bottom:8px;min-height:14px;"></div>
-    <div class="ibar">Opening Float + Revenue − Expenses = Expected Float. Compare to physical cash + M-Pesa.</div>
+    <div class="ibar">Opening Float + Revenue − Expenses = Expected Float. Compare to actual notes, coins, and M-Pesa.</div>
     <div class="recongrid">
-      <div class="reconmc" style="background:var(--greenl);border:1px solid rgba(34,197,94,0.2);"><div class="fl-lbl" style="color:var(--green);">💵 Physical Cash (KES)</div><input type="number" id="recon-cash" class="fl-inp" placeholder="0" min="0" oninput="doRecon()" style="margin-top:6px;font-size:18px;font-weight:800;border-color:rgba(34,197,94,0.4);background:var(--bg2);"></div>
+      <div class="reconmc" style="background:var(--greenl);border:1px solid rgba(34,197,94,0.2);"><div class="fl-lbl" style="color:var(--green);">💵 Notes (KES)</div><input type="number" id="recon-notes" class="fl-inp" placeholder="0" min="0" oninput="doRecon()" style="margin-top:6px;font-size:18px;font-weight:800;border-color:rgba(34,197,94,0.4);background:var(--bg2);"></div>
+      <div class="reconmc" style="background:var(--greenl);border:1px solid rgba(34,197,94,0.2);"><div class="fl-lbl" style="color:var(--green);">🪙 Coins (KES)</div><input type="number" id="recon-coins" class="fl-inp" placeholder="0" min="0" oninput="doRecon()" style="margin-top:6px;font-size:18px;font-weight:800;border-color:rgba(34,197,94,0.4);background:var(--bg2);"></div>
       <div class="reconmc" style="background:var(--bluel);border:1px solid rgba(59,130,246,0.2);"><div class="fl-lbl" style="color:var(--blue);">📱 M-Pesa (KES)</div><input type="number" id="recon-mpesa" class="fl-inp" placeholder="0" min="0" oninput="doRecon()" style="margin-top:6px;font-size:18px;font-weight:800;border-color:rgba(59,130,246,0.4);background:var(--bg2);"></div>
       <div class="reconmc" style="background:var(--surface2);border:1px solid var(--border);"><div class="fl-lbl">🎯 Expected Float (KES)</div><div id="recon-expected" style="font-size:20px;font-weight:800;color:var(--txt);margin-top:8px;">KES 0</div><div id="recon-diff" style="font-size:12px;font-weight:700;margin-top:6px;color:var(--txt3);">Enter amounts to check</div></div>
     </div>
     <div id="recon-result" style="margin-top:6px;"></div>
   </div>
+
+  ${!sess.isAdmin ? `<div class="card" style="background:var(--greenl);border:1px solid rgba(34,197,94,0.2);border-radius:var(--radius2);padding:16px;margin-bottom:14px;">
+    <div style="font-size:12px;font-weight:700;color:var(--green);text-transform:uppercase;margin-bottom:12px;">📍 Tomorrow's Opening Float</div>
+    <div id="next-opening-floats" style="display:grid;gap:8px;"></div>
+  </div>` : ''}
+
   <button class="submitbtn" onclick="submitReport()">✅ Submit End of Day Report</button>`;
 
   loadShopData(activeShop);
@@ -338,10 +345,15 @@ function loadShopData(shop) {
       renderTopupLog(g);
     });
     
-    const rc = $('recon-cash'), rm = $('recon-mpesa');
+    const rn = $('recon-notes'), rc = $('recon-coins'), rm = $('recon-mpesa');
     if (d.cashRecon) {
-      if (rc && d.cashRecon.cash) {
-        rc.value = d.cashRecon.cash;
+      if (rn && d.cashRecon.notes) {
+        rn.value = d.cashRecon.notes;
+        rn.disabled = !canEdit;
+        rn.style.opacity = canEdit ? '1' : '0.6';
+      }
+      if (rc && d.cashRecon.coins) {
+        rc.value = d.cashRecon.coins;
         rc.disabled = !canEdit;
         rc.style.opacity = canEdit ? '1' : '0.6';
       }
@@ -351,12 +363,27 @@ function loadShopData(shop) {
         rm.style.opacity = canEdit ? '1' : '0.6';
       }
     } else {
+      if (rn) rn.value = '';
       if (rc) rc.value = '';
       if (rm) rm.value = '';
       const re = $('recon-expected'), rd = $('recon-diff'), rr = $('recon-result');
       if (re) re.textContent = 'KES 0';
       if (rd) { rd.textContent = 'Enter amounts to check'; rd.style.color = 'var(--txt3)'; }
       if (rr) rr.innerHTML = '';
+    }
+    
+    // Show next opening floats for cashiers
+    if (!sess.isAdmin && d.submitted) {
+      const nof = $('next-opening-floats');
+      if (nof) {
+        nof.innerHTML = GAMES.map(g => {
+          const closing = N(d.games[g] && d.games[g].close) || 0;
+          return `<div style="display:flex;align-items:center;justify-content:space-between;padding:10px;background:rgba(255,255,255,0.05);border-radius:var(--radius2);border-left:3px solid var(--green);">
+            <span style="font-size:13px;font-weight:600;color:var(--txt);">${g.toUpperCase()}</span>
+            <span style="font-size:14px;font-weight:700;color:var(--green);">KES ${fmt(closing)}</span>
+          </div>`;
+        }).join('');
+      }
     }
     
     // Disable submit button if already submitted for cashiers
@@ -528,9 +555,9 @@ function recalc() {
 }
 
 function doRecon() {
-  const cEl = $('recon-cash'), mEl = $('recon-mpesa'), expEl = $('recon-expected'), diffEl = $('recon-diff'), resEl = $('recon-result');
+  const nEl = $('recon-notes'), cEl = $('recon-coins'), mEl = $('recon-mpesa'), expEl = $('recon-expected'), diffEl = $('recon-diff'), resEl = $('recon-result');
   if (!expEl) return;
-  const opening = N(S.shopData[activeShop] && S.shopData[activeShop].openingCash), cash = N(cEl ? cEl.value : 0), mpesa = N(mEl ? mEl.value : 0), d = S.shopData[activeShop];
+  const opening = N(S.shopData[activeShop] && S.shopData[activeShop].openingCash), notes = N(nEl ? nEl.value : 0), coins = N(cEl ? cEl.value : 0), mpesa = N(mEl ? mEl.value : 0), d = S.shopData[activeShop];
   let gameRev = 0;
   GAMES.forEach(g => { const gd = d.games[g] || {}, topupsArr = gd.topups || [], nets = topupsArr.reduce((s,t) => s + N(t.amount), 0); gameRev += (N(gd.open) + nets) - N(gd.close); });
   
@@ -539,17 +566,17 @@ function doRecon() {
   const totalCashWithdrawn = Math.abs(cashMov.filter(m => m.amount < 0).reduce((s,m) => s + m.amount, 0));
   
   const expenses = (d.expenses || []).reduce((s,e) => s + N(e.amount), 0);
-  const expected = opening + gameRev + totalCashAdded - totalCashWithdrawn - expenses, declared = cash + mpesa, diff = declared - expected, ok = Math.abs(diff) < 1;
-  d.cashRecon = {opening, cash, mpesa, gameRev, cashAdded: totalCashAdded, cashWithdrawn: totalCashWithdrawn, expenses, expected, declared, diff, ok};
+  const expected = opening + gameRev + totalCashAdded - totalCashWithdrawn - expenses, declared = notes + coins + mpesa, diff = declared - expected, ok = Math.abs(diff) < 1;
+  d.cashRecon = {opening, notes, coins, mpesa, gameRev, cashAdded: totalCashAdded, cashWithdrawn: totalCashWithdrawn, expenses, expected, declared, diff, ok};
   if (expEl) expEl.textContent = 'KES ' + fmt(expected);
-  const anyFilled = (cEl && cEl.value !== '') || (mEl && mEl.value !== '');
+  const anyFilled = (nEl && nEl.value !== '') || (cEl && cEl.value !== '') || (mEl && mEl.value !== '');
   if (!anyFilled) { if (diffEl) diffEl.textContent = 'Enter amounts to check'; if (resEl) resEl.innerHTML = ''; return; }
-  if (diffEl && (cEl && cEl.value !== '' || mEl && mEl.value !== '')) {
+  if (diffEl && anyFilled) {
     diffEl.textContent = ok ? '✅ Balanced' : diff > 0 ? '⚠️ +KES ' + fmt(diff) + ' over' : '⚠️ KES ' + fmt(Math.abs(diff)) + ' short';
     diffEl.style.color = ok ? 'var(--green)' : 'var(--red)';
   }
   if (!resEl) return;
-  if ((!cEl || cEl.value === '') && (!mEl || mEl.value === '')) { resEl.innerHTML = ''; return; }
+  if (!anyFilled) { resEl.innerHTML = ''; return; }
   resEl.innerHTML = `<div style="border:1px solid ${ok ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'};border-radius:var(--radius2);overflow:hidden;"><div style="background:${ok ? 'var(--greenl)' : 'var(--redl)'};padding:14px 16px;display:flex;align-items:center;gap:12px;"><span style="font-size:32px;line-height:1;">${ok ? '✅' : '⚠️'}</span><div><div style="font-size:15px;font-weight:700;color:${ok ? 'var(--green)' : 'var(--red)'};">${ok ? 'Balanced — all money accounted for' : diff > 0 ? 'KES ' + fmt(diff) + ' OVER' : 'KES ' + fmt(Math.abs(diff)) + ' SHORT'}</div><div style="font-size:12px;color:var(--txt2);margin-top:3px;">Expected: <b>KES ${fmt(expected)}</b> · Declared: <b>KES ${fmt(declared)}</b></div></div></div></div>`;
 }
 
@@ -718,8 +745,9 @@ async function submitReport() {
   if ($('pane-history') && $('pane-history').classList.contains('on')) renderHistory();
   setTimeout(() => {
     loadShopData(activeShop);
-    const rc = $('recon-cash'), rm = $('recon-mpesa');
+    const rn = $('recon-notes'), rc = $('recon-coins'), rm = $('recon-mpesa');
     const re = $('recon-expected'), rd = $('recon-diff'), rr = $('recon-result');
+    if (rn) rn.value = '';
     if (rc) rc.value = '';
     if (rm) rm.value = '';
     if (re) re.textContent = 'KES 0';
