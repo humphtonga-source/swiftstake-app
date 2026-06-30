@@ -126,10 +126,12 @@ async function bootApp() {
     try {
       const savedSession = localStorage.getItem('swiftstake_session');
       const savedActiveShop = localStorage.getItem('swiftstake_activeShop');
+      const savedThresholds = localStorage.getItem('swiftstake_cashThresholds');
       
       if (savedSession) {
         sess = JSON.parse(savedSession);
         if (savedActiveShop) activeShop = savedActiveShop;
+        if (savedThresholds) S.cashThresholds = JSON.parse(savedThresholds);
         
         // Verify the user still exists in staff list
         const userExists = S.staff.find(s => s.name === sess.name && s.role === sess.role);

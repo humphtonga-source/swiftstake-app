@@ -68,16 +68,23 @@ function subscribeToDataChanges() {
           card.style.background = 'rgba(34,197,94,0.12)';
           setTimeout(() => { card.style.background = ''; }, 1200);
         }
-        pushNotif('💵 Cash movement updated', 'Admin updated ' + sh + ' cash');
+        // Only notify once per 10 minutes to reduce spam
+        const nKey = '_lastCashNotif_' + sh, now = Date.now();
+        if (!window[nKey] || now - window[nKey] > 600000) {
+          window[nKey] = now;
+          pushNotif('💵 Cash movement updated', 'Admin updated ' + sh + ' cash');
+        }
       }
 
       if (sess.isAdmin && $('pane-dashboard') && $('pane-dashboard').classList.contains('on'))
         renderDashboard();
 
+      // Reduce admin notifications - only once per hour
       const nKey = '_lastDataNotif_' + sh, now = Date.now();
-      if (sess.isAdmin && (!window[nKey] || now - window[nKey] > 300000)) {
+      if (sess.isAdmin && (!window[nKey] || now - window[nKey] > 3600000)) {
         window[nKey] = now;
-        pushNotif('🔄 ' + sh + ' updated', 'Live data received from cashier');
+        // Disabled for now - too spammy. Enable only if needed.
+        // pushNotif('🔄 ' + sh + ' updated', 'Live data received from cashier');
       }
     })
     .on('postgres_changes', {event:'INSERT', schema:'public', table:'reports'}, payload => {

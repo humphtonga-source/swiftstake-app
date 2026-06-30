@@ -176,8 +176,25 @@ function startEditShop(i) { $('shopname-display-' + i).style.display = 'none'; $
 function renderSettings() {
   const p = $('pane-settings'); if (!p) return;
   const shopHtml = sess.isAdmin ? `<div class="card" style="margin-bottom:14px;"><div class="cardtitle">🏪 Shop Management</div><div id="shop-list-wrap">${buildShopList()}</div><div class="addshoprow"><input id="new-shop-name" placeholder="New shop name" type="text" maxlength="40"><button onclick="addShop()">+ Create</button></div><div id="shopmsg" style="margin-top:8px;font-size:13px;"></div></div>` : '';
+  
+  const cashThresholdHtml = sess.isAdmin ? `<div class="card" style="margin-bottom:14px;"><div class="cardtitle">💰 Cash Float Thresholds (M-Pesa Deposits)</div>
+    <div style="font-size:12px;color:var(--txt3);margin-bottom:12px;">Set minimum cash to keep in shop. Excess is auto-calculated for M-Pesa deposit.</div>
+    <div style="display:grid;gap:10px;">${(S.shops || []).map((sh, i) => `
+      <div style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--bg2);border-radius:var(--radius2);border:1px solid var(--border);">
+        <span style="font-weight:700;flex:1;">${sh.name}</span>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <span style="font-size:13px;color:var(--txt3);">KES</span>
+          <input type="number" id="threshold-${sh.name}" value="${(S.cashThresholds && S.cashThresholds[sh.name]) || 5000}" min="1000" max="50000" style="width:100px;border:1px solid var(--border2);border-radius:4px;padding:6px;font-size:14px;outline:none;background:var(--bg3);color:var(--txt);">
+          <button onclick="saveCashThreshold('${sh.name}')" style="padding:6px 12px;background:var(--green);color:#fff;border:none;border-radius:4px;font-size:12px;font-weight:700;cursor:pointer;">Save</button>
+        </div>
+      </div>
+    `).join('')}</div>
+    <div id="thresholdmsg" style="margin-top:8px;font-size:13px;"></div>
+  </div>` : '';
+  
   p.innerHTML = `<div class="ph"><div class="ph-icon">⚙️</div><h2>Settings</h2></div>
     ${shopHtml}
+    ${cashThresholdHtml}
     <div class="card" style="margin-bottom:14px;"><div class="cardtitle">👥 Staff & Permissions</div><div id="staff-tbl-wrap">${buildStaffTable()}</div>
       <div class="addstaffgrid">
         <input id="auth-name" placeholder="Full name" type="text">
@@ -206,3 +223,24 @@ async function togglePerm(i, k, v) { S.staff[i].perms[k] = v; const s = S.staff[
 async function addStaff() { const nEl = $('auth-name'), sEl = $('auth-shop'), pEl = $('auth-pin'), rEl = $('auth-role'), msg = $('staffmsg'); if (!msg) return; const name = nEl ? nEl.value.trim() : '', shop = sEl ? sEl.value : (SHOPS[0]||'Kiawara'), pin = pEl ? pEl.value.trim() : '', role = rEl ? rEl.value : 'cashier'; if (!name) { msg.textContent = '⚠️ Please enter a full name.'; msg.className = 'fail'; return; } if (!/^\d{4}$/.test(pin)) { msg.textContent = '⚠️ PIN must be exactly 4 digits.'; msg.className = 'fail'; return; } if (S.staff.find(s => s.pin === pin)) { msg.textContent = '⚠️ That PIN is already in use.'; msg.className = 'fail'; return; } msg.textContent = '⏳ Saving...'; msg.className = ''; const perms = role === 'admin' ? {...ADMINPERMS} : {...DEFPERMS}; try { const {error} = await db.from('staff').insert({name, shop, pin, role, perms}); if (error) throw new Error(error.message); const {data:f} = await db.from('staff').select('id,name,shop,pin,role,perms').eq('name', name).eq('pin', pin).limit(1); const fm = f && f[0] ? JSON.parse(JSON.stringify(f[0])) : null; S.staff.push(fm ? {id:fm.id, name:String(fm.name), shop:String(fm.shop), pin:String(fm.pin), role:String(fm.role), perms:{...fm.perms}} : {name, shop, pin, role, perms:{...perms}}); if (nEl) nEl.value = ''; if (pEl) pEl.value = ''; renderSettings(); const nm = $('staffmsg'); if (nm) { nm.textContent = '✅ ' + name + ' added!'; nm.className = 'succ'; } setupNav(); setTimeout(() => { const m = $('staffmsg'); if (m) m.textContent = ''; }, 4000); } catch(e) { msg.textContent = '❌ ' + e.message; msg.className = 'fail'; } }
 async function removeStaff(i) { const s = S.staff[i]; if (!s) return; const ok = await confirmModal.show('Remove Staff', 'Remove ' + s.name + '?', '🗑️ Remove', 'var(--red)', '👤'); if (!ok) return; try { if (s.id) { const {error} = await db.from('staff').eq('id', s.id).delete(); if (error) throw new Error(error.message); } else await db.from('staff').eq('name', s.name).delete(); S.staff.splice(i, 1); renderSettings(); pushNotif('🗑️ Staff removed', s.name + ' removed.'); } catch(e) { alert('Could not remove: ' + (e.message || 'Error')); } }
 async function changePin() { const cur = $('cur-pin').value, nw = $('new-pin').value, cf = $('conf-pin').value; const msg = $('pinmsg'), me = S.staff.find(s => s.name === sess.name); if (!me || cur !== me.pin) { msg.textContent = 'Current PIN incorrect.'; msg.className = 'fail'; return; } if (!/^\d{4}$/.test(nw)) { msg.textContent = 'Must be 4 digits.'; msg.className = 'fail'; return; } if (nw !== cf) { msg.textContent = 'PINs do not match.'; msg.className = 'fail'; return; } me.pin = nw; if (me.id) await db.from('staff').update({pin:nw}).eq('id', me.id); msg.textContent = 'PIN updated!'; msg.className = 'succ'; ['cur-pin','new-pin','conf-pin'].forEach(id => { const e = $(id); if (e) e.value = ''; }); }
+
+async function saveCashThreshold(shop) {
+  const inp = $(`threshold-${shop}`);
+  if (!inp) return;
+  const val = N(inp.value);
+  if (val < 1000) { alert('Minimum threshold is KES 1,000'); return; }
+  if (val > 50000) { alert('Maximum threshold is KES 50,000'); return; }
+  
+  if (!S.cashThresholds) S.cashThresholds = {};
+  S.cashThresholds[shop] = val;
+  
+  // Save to localStorage for now (you can sync to DB later)
+  localStorage.setItem('swiftstake_cashThresholds', JSON.stringify(S.cashThresholds));
+  
+  const msg = $('thresholdmsg');
+  if (msg) {
+    msg.textContent = `✅ ${shop} threshold set to KES ${fmt(val)}`;
+    msg.style.color = 'var(--green)';
+    setTimeout(() => { msg.textContent = ''; }, 3000);
+  }
+}

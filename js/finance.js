@@ -190,7 +190,7 @@ function gameCardHTML(g) {
     <div id="${g}-body" class="gcbody">
       <div class="fr2">
         <div><label class="fl-lbl">Opening Float (KES)</label><input type="number" class="fl-inp" id="${g}-open" placeholder="0" oninput="if(this.value<0)this.value=0;const game='${g}';S.shopData[activeShop].games[game].open=N(this.value);recalcDebounced();autoSaveShopState(activeShop);" onblur="if(this.value<0)this.value=0;const game='${g}';S.shopData[activeShop].games[game].open=N(this.value);saveShopState(activeShop)" min="0"></div>
-        <div><label class="fl-lbl">Closing Float (KES)</label><input type="number" class="fl-inp" id="${g}-close" placeholder="0" oninput="if(this.value<0)this.value=0;const game='${g}';S.shopData[activeShop].games[game].close=N(this.value);recalcDebounced();autoSaveShopState(activeShop);" onblur="if(this.value<0)this.value=0;const game='${g}';S.shopData[activeShop].games[game].close=N(this.value);saveShopState(activeShop)" min="0"></div>
+        <div><label class="fl-lbl">Closing Float (KES)</label><input type="number" class="fl-inp" id="${g}-close" placeholder="0" oninput="if(this.value<0)this.value=0;const game='${g}';const val=N(this.value);S.shopData[activeShop].games[game].close=val;recalcDebounced();autoSaveShopState(activeShop);" onblur="closingFloatConfirm('${g}',this.value)" min="0"></div>
       </div>
       <div class="gres" id="gres-${g}">Enter opening and closing float above</div>
       <div id="topup-log-${g}"></div><div id="topup-notice-${g}"></div>
@@ -619,6 +619,33 @@ function delExp(i) {
   AuditLog.record('remove', activeShop, 'expenses',
     beforeSnap,
     `Deleted expense: "${removed ? removed.desc || 'no desc' : '?'}" KES ${removed ? fmt(N(removed.amount)) : '?'}`);
+}
+
+async function closingFloatConfirm(game, value) {
+  if (value < 0) value = 0;
+  const d = S.shopData[activeShop];
+  const oldVal = d.games[game].close;
+  const newVal = N(value);
+  
+  if (oldVal === newVal) return;
+  
+  const ok = await confirmModal.show(
+    '📍 Confirm Closing Float',
+    `Updating ${game.toUpperCase()} closing float:\n\nOld: KES ${fmt(oldVal)}\nNew: KES ${fmt(newVal)}\n\nReady to send to admin?`,
+    '✅ Confirm',
+    'var(--blue)',
+    '🎰'
+  );
+  
+  if (ok) {
+    d.games[game].close = newVal;
+    await saveShopState(activeShop);
+    const inp = $(`${game}-close`);
+    if (inp) inp.value = newVal;
+  } else {
+    const inp = $(`${game}-close`);
+    if (inp) inp.value = oldVal;
+  }
 }
 
 async function submitReport() {
