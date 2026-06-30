@@ -67,6 +67,19 @@ function renderDashboard() {
   <button class="sbtn" style="margin-top:10px;width:100%;" onclick="goTab('planning',document.getElementById('nav-planning'))">View all tasks →</button>
   </div>
 
+  ${sess.isAdmin ? `<div class="card"><div class="cardtitle">🏆 Shop Rankings</div>
+    <div style="margin-bottom:16px;">
+      <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+        <button onclick="renderRankings('daily')" id="rank-btn-daily" style="padding:6px 12px;background:var(--blue);color:#fff;border:none;border-radius:4px;font-size:12px;font-weight:700;cursor:pointer;">📅 Daily</button>
+        <button onclick="renderRankings('weekly')" id="rank-btn-weekly" style="padding:6px 12px;background:var(--surface2);color:var(--txt);border:none;border-radius:4px;font-size:12px;font-weight:700;cursor:pointer;">📊 Weekly</button>
+        <button onclick="renderRankings('monthly')" id="rank-btn-monthly" style="padding:6px 12px;background:var(--surface2);color:var(--txt);border:none;border-radius:4px;font-size:12px;font-weight:700;cursor:pointer;">📈 Monthly</button>
+      </div>
+      <div id="rankings-list"></div>
+    </div>
+  </div>` : `<div class="card"><div class="cardtitle">🏆 Your Ranking Today</div>
+    <div id="cashier-ranking"></div>
+  </div>`}
+
   ${allRpts.length ? `<div class="card"><div class="cardtitle">📋 Recent Reports</div>
     ${allRpts.slice(0, 3).map(r => {
       const net = N(r.totals.net);
@@ -78,4 +91,112 @@ function renderDashboard() {
     }).join('')}
     <button class="sbtn" style="margin-top:10px;width:100%;" onclick="goTab('history',document.getElementById('nav-history'))">View all reports →</button>
   </div>` : ''}`;
+  
+  // Render rankings on dashboard load
+  setTimeout(() => {
+    renderRankings('daily');
+    updateCashierRanking();
+  }, 100);
+}
+
+function renderRankings(period = 'daily') {
+  const now = new Date();
+  let startDate;
+  
+  if (period === 'daily') {
+    startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  } else if (period === 'weekly') {
+    const day = now.getDay();
+    startDate = new Date(now);
+    startDate.setDate(now.getDate() - day);
+    startDate.setHours(0, 0, 0, 0);
+  } else { // monthly
+    startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+  }
+  
+  const filteredRpts = S.reports.filter(r => new Date(r.id) >= startDate);
+  const shopStats = {};
+  
+  SHOPS.forEach(shop => {
+    const rpts = filteredRpts.filter(r => r.shop === shop);
+    const totalNet = rpts.reduce((s, r) => s + N(r.totals.net || 0), 0);
+    const totalRev = rpts.reduce((s, r) => s + N(r.totals.revenue || 0), 0);
+    const avgNet = rpts.length > 0 ? totalNet / rpts.length : 0;
+    shopStats[shop] = { totalNet, totalRev, avgNet, count: rpts.length };
+  });
+  
+  // Sort by total net profit
+  const ranked = Object.entries(shopStats)
+    .sort((a, b) => N(b[1].totalNet) - N(a[1].totalNet))
+    .map(([shop, stats], idx) => ({shop, ...stats, position: idx + 1}));
+  
+  const listEl = $('rankings-list');
+  if (listEl) {
+    listEl.innerHTML = ranked.map((r, i) => {
+      const color = i === 0 ? 'var(--gold)' : i === 1 ? 'var(--blue)' : i === 2 ? 'var(--red)' : 'var(--txt3)';
+      const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : (i + 1) + '.';
+      return `<div style="display:flex;align-items:center;gap:12px;padding:12px;background:var(--bg2);border-left:4px solid ${color};margin-bottom:8px;border-radius:2px;">
+        <span style="font-size:20px;font-weight:700;color:${color};width:40px;text-align:center;">${medal}</span>
+        <div style="flex:1;">
+          <div style="font-weight:700;color:var(--txt);font-size:14px;">${r.shop}</div>
+          <div style="font-size:12px;color:var(--txt3);margin-top:2px;">${r.count} report${r.count!==1?'s':''} · Avg: KES ${fmt(r.avgNet)}/day</div>
+        </div>
+        <div style="text-align:right;">
+          <div style="font-weight:700;color:${N(r.totalNet) >= 0 ? 'var(--green)' : 'var(--red)'};font-size:14px;">KES ${fmt(r.totalNet)}</div>
+          <div style="font-size:11px;color:var(--txt3);">Total Net</div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+  
+  // Update button states
+  ['daily', 'weekly', 'monthly'].forEach(p => {
+    const btn = $(`rank-btn-${p}`);
+    if (btn) {
+      btn.style.background = p === period ? 'var(--blue)' : 'var(--surface2)';
+      btn.style.color = p === period ? '#fff' : 'var(--txt)';
+    }
+  });
+}
+
+function updateCashierRanking() {
+  if (sess.isAdmin) return;
+  
+  const now = new Date();
+  const todayStr = now.toDateString();
+  const todayRpts = S.reports.filter(r => new Date(r.id).toDateString() === todayStr);
+  
+  const shopStats = {};
+  SHOPS.forEach(shop => {
+    const rpt = todayRpts.find(r => r.shop === shop);
+    shopStats[shop] = N(rpt ? rpt.totals.net : 0);
+  });
+  
+  const ranked = Object.entries(shopStats)
+    .sort((a, b) => N(b[1]) - N(a[1]))
+    .map(([shop, net], idx) => ({shop, net, position: idx + 1}));
+  
+  const myRanking = ranked.find(r => r.shop === sess.shop);
+  const rankEl = $('cashier-ranking');
+  
+  if (rankEl && myRanking) {
+    const medal = myRanking.position === 1 ? '🥇' : myRanking.position === 2 ? '🥈' : myRanking.position === 3 ? '🥉' : '📍';
+    rankEl.innerHTML = `
+      <div style="text-align:center;padding:20px;">
+        <div style="font-size:40px;margin-bottom:10px;">${medal}</div>
+        <div style="font-size:24px;font-weight:700;color:var(--txt);margin-bottom:8px;">Position #${myRanking.position} of ${ranked.length}</div>
+        <div style="font-size:14px;color:var(--txt2);margin-bottom:12px;">Today's Net: <span style="color:${N(myRanking.net) >= 0 ? 'var(--green)' : 'var(--red)'};font-weight:700;">KES ${fmt(myRanking.net)}</span></div>
+        <div style="background:var(--bg2);padding:12px;border-radius:4px;font-size:12px;color:var(--txt3);">
+          ${myRanking.position === 1 ? '🎉 You\'re leading today!' : myRanking.position === 2 ? '😊 Almost there, keep pushing!' : '💪 Keep working, catch up!'}
+        </div>
+      </div>
+      <div style="margin-top:16px;padding:12px;background:var(--surface2);border-radius:4px;">
+        <div style="font-weight:700;color:var(--txt);font-size:12px;margin-bottom:8px;">📊 Today's Standings:</div>
+        ${ranked.map((r, i) => `<div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0;border-bottom:1px solid var(--border);">
+          <span>${i+1}. ${r.shop}</span>
+          <span style="color:${N(r.net) >= 0 ? 'var(--green)' : 'var(--red)'};font-weight:700;">KES ${fmt(r.net)}</span>
+        </div>`).join('')}
+      </div>
+    `;
+  }
 }

@@ -167,14 +167,39 @@ function renderFinance() {
     <div id="recon-result" style="margin-top:6px;"></div>
   </div>
 
+  ${!sess.isAdmin ? `<div class="card" style="background:var(--bluel);border:1px solid rgba(59,130,246,0.2);border-radius:var(--radius2);padding:16px;margin-bottom:14px;">
+    <div style="font-size:12px;font-weight:700;color:var(--blue);text-transform:uppercase;margin-bottom:12px;">📱 M-Pesa Deposit (Auto-Calculate)</div>
+    <div id="mpesa-deposit-info" style="display:none;">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;font-size:13px;">
+        <div><span style="color:var(--txt3);">Total Physical Cash:</span><div style="font-weight:700;color:var(--txt);font-size:14px;" id="mpesa-total-cash">KES 0</div></div>
+        <div><span style="color:var(--txt3);">Minimum to Keep:</span><div style="font-weight:700;color:var(--green);font-size:14px;" id="mpesa-threshold">KES 0</div></div>
+        <div><span style="color:var(--txt3);">Excess to Deposit:</span><div style="font-weight:700;color:var(--blue);font-size:14px;" id="mpesa-excess">KES 0</div></div>
+        <div><span style="color:var(--txt3);">After M-Pesa Fees:</span><div style="font-weight:700;color:var(--green);font-size:14px;" id="mpesa-after-fees">KES 0</div></div>
+      </div>
+      <div style="display:flex;gap:6px;margin-bottom:8px;">
+        <input type="number" id="mpesa-fee" placeholder="M-Pesa fee (KES)" min="0" value="0" style="flex:1;border:1px solid var(--border2);border-radius:4px;padding:8px;font-size:12px;outline:none;background:var(--bg3);color:var(--txt);">
+        <button onclick="calculateMpesaDeposit()" style="padding:8px 12px;background:var(--blue);color:#fff;border:none;border-radius:4px;font-size:12px;font-weight:700;cursor:pointer;">Recalc</button>
+      </div>
+      <button onclick="initiateMpesaDeposit()" style="width:100%;padding:12px;background:var(--blue);color:#fff;border:none;border-radius:4px;font-size:13px;font-weight:700;cursor:pointer;">💳 Deposit via M-Pesa</button>
+    </div>
+    <div id="mpesa-deposit-empty" style="font-size:12px;color:var(--txt3);padding:8px;text-align:center;">Complete reconciliation to see deposit amount</div>
+  </div>` : ''}
+
   ${!sess.isAdmin ? `<div class="card" style="background:var(--greenl);border:1px solid rgba(34,197,94,0.2);border-radius:var(--radius2);padding:16px;margin-bottom:14px;">
     <div style="font-size:12px;font-weight:700;color:var(--green);text-transform:uppercase;margin-bottom:12px;">📍 Tomorrow's Opening Float</div>
     <div id="next-opening-floats" style="display:grid;gap:8px;"></div>
   </div>` : ''}
 
+  ${!sess.isAdmin ? `<div class="card" style="background:var(--bluel);border:1px solid rgba(59,130,246,0.2);border-radius:var(--radius2);padding:16px;margin-bottom:14px;" id="ai-coach-section">
+    <!-- AI Coach insights loaded here -->
+  </div>` : ''}
+
   <button class="submitbtn" onclick="submitReport()">✅ Submit End of Day Report</button>`;
 
   loadShopData(activeShop);
+  
+  // Render AI coach insights for cashiers
+  setTimeout(() => renderAiCoach(), 100);
 }
 
 function gameCardHTML(g) {
@@ -578,6 +603,20 @@ function doRecon() {
   if (!resEl) return;
   if (!anyFilled) { resEl.innerHTML = ''; return; }
   resEl.innerHTML = `<div style="border:1px solid ${ok ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'};border-radius:var(--radius2);overflow:hidden;"><div style="background:${ok ? 'var(--greenl)' : 'var(--redl)'};padding:14px 16px;display:flex;align-items:center;gap:12px;"><span style="font-size:32px;line-height:1;">${ok ? '✅' : '⚠️'}</span><div><div style="font-size:15px;font-weight:700;color:${ok ? 'var(--green)' : 'var(--red)'};">${ok ? 'Balanced — all money accounted for' : diff > 0 ? 'KES ' + fmt(diff) + ' OVER' : 'KES ' + fmt(Math.abs(diff)) + ' SHORT'}</div><div style="font-size:12px;color:var(--txt2);margin-top:3px;">Expected: <b>KES ${fmt(expected)}</b> · Declared: <b>KES ${fmt(declared)}</b></div></div></div></div>`;
+  
+  // Show M-Pesa deposit section
+  const mpesaInfo = $('mpesa-deposit-info');
+  const mpesaEmpty = $('mpesa-deposit-empty');
+  if (mpesaInfo && mpesaEmpty) {
+    if (anyFilled) {
+      mpesaInfo.style.display = 'block';
+      mpesaEmpty.style.display = 'none';
+      calculateMpesaDeposit();
+    } else {
+      mpesaInfo.style.display = 'none';
+      mpesaEmpty.style.display = 'block';
+    }
+  }
 }
 
 // ✅ FIX: Improved addExp with shop check
@@ -646,6 +685,86 @@ async function closingFloatConfirm(game, value) {
     const inp = $(`${game}-close`);
     if (inp) inp.value = oldVal;
   }
+}
+
+function calculateMpesaDeposit() {
+  const d = S.shopData[activeShop];
+  const threshold = (S.cashThresholds && S.cashThresholds[activeShop]) || 5000;
+  const notes = N($('recon-notes') ? $('recon-notes').value : 0);
+  const coins = N($('recon-coins') ? $('recon-coins').value : 0);
+  const totalCash = notes + coins;
+  const excess = Math.max(0, totalCash - threshold);
+  const fee = N($('mpesa-fee') ? $('mpesa-fee').value : 0);
+  const afterFees = excess - fee;
+  
+  $('mpesa-total-cash').textContent = 'KES ' + fmt(totalCash);
+  $('mpesa-threshold').textContent = 'KES ' + fmt(threshold);
+  $('mpesa-excess').textContent = 'KES ' + fmt(excess);
+  $('mpesa-after-fees').textContent = 'KES ' + fmt(Math.max(0, afterFees));
+  
+  // Store for later use
+  d.mpesaCalc = {totalCash, threshold, excess, fee, afterFees: Math.max(0, afterFees)};
+}
+
+async function initiateMpesaDeposit() {
+  const d = S.shopData[activeShop];
+  if (!d.mpesaCalc || d.mpesaCalc.excess <= 0) {
+    alert('No excess cash to deposit.');
+    return;
+  }
+  
+  const amt = d.mpesaCalc.afterFees;
+  const ok = await confirmModal.show(
+    '💳 M-Pesa Deposit',
+    `Deposit KES ${fmt(amt)} via M-Pesa?\n\nYou will:\n1. Go to M-Pesa shop\n2. Deposit KES ${fmt(amt)}\n3. Get reference number\n4. Enter reference here`,
+    '✅ Proceed',
+    'var(--blue)',
+    '📱'
+  );
+  
+  if (!ok) return;
+  
+  const ref = prompt('Enter M-Pesa reference number (e.g., ABC123XYZ):');
+  if (!ref) return;
+  
+  const now = new Date();
+  const deposit = {
+    id: now.getTime(),
+    shop: activeShop,
+    amount: amt,
+    gross: d.mpesaCalc.excess,
+    fee: d.mpesaCalc.fee,
+    reference: ref,
+    status: 'pending',
+    created_at: now.toISOString(),
+    created_by: sess.name,
+    confirmed_at: null,
+    confirmed_by: null
+  };
+  
+  if (!S.mpesaDeposits) S.mpesaDeposits = [];
+  S.mpesaDeposits.push(deposit);
+  
+  // Save to database
+  try {
+    const {error} = await db.from('mpesa_deposits').insert(deposit);
+    if (error) throw error;
+  } catch(e) {
+    logError('initiateMpesaDeposit', e, {shop: activeShop, amount: amt});
+    showWarning('⚠️ Deposit logged locally but could not sync to server.');
+  }
+  
+  await AuditLog.record('deposit', activeShop, 'mpesa',
+    'M-Pesa deposit initiated',
+    `KES ${fmt(amt)} (gross: KES ${fmt(d.mpesaCalc.excess)}, fee: KES ${fmt(d.mpesaCalc.fee)}) · Ref: ${ref}`
+  );
+  
+  pushNotif('💳 M-Pesa deposit initiated', `${activeShop} · KES ${fmt(amt)}`);
+  alert(`✅ Deposit recorded!\n\nRef: ${ref}\nAmount: KES ${fmt(amt)}\n\nAdmin will confirm when money arrives.`);
+  
+  // Reset
+  $('mpesa-fee').value = '0';
+  renderFinance();
 }
 
 async function submitReport() {
@@ -833,4 +952,128 @@ function copyExport() {
   const t = $('exptxt').textContent;
   if (navigator.clipboard) navigator.clipboard.writeText(t).then(() => alert('Copied!'));
   else { const ta = document.createElement('textarea'); ta.value = t; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta); alert('Copied!'); }
+}
+
+function getAiInsights() {
+  const d = S.shopData[activeShop];
+  if (!d) return null;
+  
+  const thisWeekReports = S.reports.filter(r => {
+    const rDate = new Date(r.id);
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    return r.shop === activeShop && rDate >= sevenDaysAgo;
+  });
+  
+  const insights = {
+    totalReports: thisWeekReports.length,
+    avgNet: thisWeekReports.length > 0 ? thisWeekReports.reduce((s,r) => s + N(r.totals.net||0), 0) / thisWeekReports.length : 0,
+    totalRev: thisWeekReports.reduce((s,r) => s + N(r.totals.revenue||0), 0),
+    gamePerformance: {},
+    issues: [],
+    strengths: [],
+    recommendations: []
+  };
+  
+  // Analyze game performance
+  GAMES.forEach(g => {
+    let totalRev = 0, count = 0;
+    thisWeekReports.forEach(r => {
+      if (r.games && r.games[g]) {
+        totalRev += N(r.games[g].revenue || 0);
+        count++;
+      }
+    });
+    if (count > 0) {
+      insights.gamePerformance[g] = totalRev / count;
+    }
+  });
+  
+  // Identify strengths
+  const topGame = Object.entries(insights.gamePerformance)
+    .sort((a,b) => N(b[1]) - N(a[1]))[0];
+  if (topGame) {
+    insights.strengths.push(`${topGame[0].toUpperCase()} is your star performer (Avg: KES ${fmt(topGame[1])}/day)`);
+  }
+  
+  if (insights.avgNet > 10000) {
+    insights.strengths.push('Excellent profitability! Keep up the momentum');
+  }
+  
+  // Identify issues
+  const bottleGame = Object.entries(insights.gamePerformance)
+    .sort((a,b) => N(a[1]) - N(b[1]))[0];
+  if (bottleGame && N(bottleGame[1]) < 5000) {
+    insights.issues.push(`${bottleGame[0].toUpperCase()} underperforming (Avg: KES ${fmt(bottleGame[1])}/day)`);
+  }
+  
+  if (thisWeekReports.length === 0) {
+    insights.issues.push('No data yet this week - submit more reports');
+  } else if (thisWeekReports.length < 5) {
+    insights.issues.push(`Only ${thisWeekReports.length} submissions this week - aim for daily reports`);
+  }
+  
+  // Recommendations
+  if (insights.issues.length === 0 && insights.strengths.length > 0) {
+    insights.recommendations.push('🎯 You\'re doing great! Focus on consistency');
+  } else if (insights.issues.length > 0) {
+    insights.recommendations.push('📈 Investigate underperforming games - check equipment or staffing');
+    insights.recommendations.push('💡 Share best practices from ' + (topGame ? topGame[0] : 'top games'));
+  }
+  
+  return insights;
+}
+
+function renderAiCoach() {
+  if (sess.isAdmin || !$('pane-finance') || !$('pane-finance').classList.contains('on')) return;
+  
+  const insights = getAiInsights();
+  if (!insights) return;
+  
+  const coachDiv = document.querySelector('#ai-coach-section');
+  if (!coachDiv) return;
+  
+  let html = `<div class="cardtitle" style="color:var(--blue);margin-bottom:12px;">🤖 AI Coach - Shop Insights</div>`;
+  
+  if (insights.totalReports === 0) {
+    html += `<div style="font-size:13px;color:var(--txt3);padding:8px;text-align:center;">Submit reports to get insights</div>`;
+  } else {
+    // Summary
+    html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
+      <div style="padding:10px;background:var(--bluel);border-radius:4px;border-left:4px solid var(--blue);">
+        <div style="font-size:11px;color:var(--blue);font-weight:700;text-transform:uppercase;">Week Avg Net</div>
+        <div style="font-size:18px;font-weight:700;color:var(--txt);margin-top:4px;">KES ${fmt(insights.avgNet)}</div>
+      </div>
+      <div style="padding:10px;background:var(--greenl);border-radius:4px;border-left:4px solid var(--green);">
+        <div style="font-size:11px;color:var(--green);font-weight:700;text-transform:uppercase;">Week Revenue</div>
+        <div style="font-size:18px;font-weight:700;color:var(--txt);margin-top:4px;">KES ${fmt(insights.totalRev)}</div>
+      </div>
+    </div>`;
+    
+    // Strengths
+    if (insights.strengths.length > 0) {
+      html += `<div style="margin-bottom:12px;padding:12px;background:var(--greenl);border-left:4px solid var(--green);border-radius:2px;">
+        <div style="font-weight:700;color:var(--green);font-size:12px;margin-bottom:6px;">✅ What's Going Right</div>
+        ${insights.strengths.map(s => `<div style="font-size:12px;color:var(--txt);padding:4px 0;">• ${s}</div>`).join('')}
+      </div>`;
+    }
+    
+    // Issues
+    if (insights.issues.length > 0) {
+      html += `<div style="margin-bottom:12px;padding:12px;background:var(--redl);border-left:4px solid var(--red);border-radius:2px;">
+        <div style="font-weight:700;color:var(--red);font-size:12px;margin-bottom:6px;">⚠️ Areas to Improve</div>
+        ${insights.issues.map(i => `<div style="font-size:12px;color:var(--txt);padding:4px 0;">• ${i}</div>`).join('')}
+      </div>`;
+    }
+    
+    // Recommendations
+    if (insights.recommendations.length > 0) {
+      html += `<div style="padding:12px;background:var(--surface2);border-left:4px solid var(--blue);border-radius:2px;">
+        <div style="font-weight:700;color:var(--blue);font-size:12px;margin-bottom:6px;">💡 Recommendations</div>
+        ${insights.recommendations.map(r => `<div style="font-size:12px;color:var(--txt);padding:4px 0;">→ ${r}</div>`).join('')}
+      </div>`;
+    }
+  }
+  
+  coachDiv.innerHTML = html;
 }
