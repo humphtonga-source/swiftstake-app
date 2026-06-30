@@ -1,21 +1,58 @@
 // ── BANKING ──
 function renderBanking() {
   const p = $('pane-banking'); if (!p) return;
-  const tB = S.banks.reduce((s,b) => s + N(b.amount), 0), tD = S.debts.reduce((s,d) => s + N(d.amount), 0), net = tB - tD;
+  const tB = S.banks.reduce((s,b) => s + N(b.amount), 0), tD = S.debts.reduce((s,d) => s + (N(d.amount) - N(d.paid || 0)), 0), net = tB - tD;
   p.innerHTML = `<div class="ph"><div class="ph-icon">🏦</div><h2>Banking & Debts</h2></div>
     <div class="metrics">
       <div class="mc"><div class="mclbl">Bank Balance</div><div class="mcval pos">KES ${fmt(tB)}</div></div>
-      <div class="mc"><div class="mclbl">Total Debts</div><div class="mcval neg">KES ${fmt(tD)}</div></div>
+      <div class="mc"><div class="mclbl">Outstanding Debts</div><div class="mcval neg">KES ${fmt(tD)}</div></div>
       <div class="mc"><div class="mclbl">Net Position</div><div class="mcval ${net >= 0 ? 'pos' : 'neg'}">KES ${fmt(net)}</div></div>
-      <div class="mc"><div class="mclbl">Active Debts</div><div class="mcval">${S.debts.length}</div></div>
+      <div class="mc"><div class="mclbl">Active Debts</div><div class="mcval">${S.debts.filter(d => N(d.amount) - N(d.paid||0) > 0).length}</div></div>
     </div>
     <div class="card"><div class="cardtitle">🏦 Bank Accounts</div>${S.banks.length ? S.banks.map((b,i) => `<div class="bitem"><span class="bname">${b.name}</span><span class="bpos">KES ${fmt(b.amount)}</span><button class="rmbtn" onclick="removeBank('${b.id||i}')">Remove</button></div>`).join('') : '<div style="font-size:13px;color:var(--txt3);padding:8px 0;">No accounts added yet.</div>'}<div class="addrow"><input id="bank-name" placeholder="Account name" type="text"><input id="bank-amt" placeholder="Balance (KES)" type="number" min="0"><button onclick="addBank()">Add Account</button></div></div>
-    <div class="card"><div class="cardtitle">💸 Debts & Loans</div>${S.debts.length ? S.debts.map((d,i) => `<div class="bitem"><div><span class="bname">${d.name}</span><div class="bdue">Due: ${d.due_date||'Not set'}</div></div><span class="bneg">KES ${fmt(d.amount)}</span><button class="rmbtn" onclick="removeDebt('${d.id||i}')">Remove</button></div>`).join('') : '<div style="font-size:13px;color:var(--txt3);padding:8px 0;">No debts recorded.</div>'}<div class="addrow" style="grid-template-columns:1fr 1fr;"><input id="debt-name" placeholder="Creditor" type="text"><input id="debt-amt" placeholder="Amount (KES)" type="number" min="0"><input id="debt-due" placeholder="Due date" type="text" style="grid-column:1/-1;"><button onclick="addDebt()" style="grid-column:1/-1;">Add Debt</button></div></div>`;
+    <div class="card"><div class="cardtitle">💸 Debts & Loans</div>${S.debts.length ? S.debts.map((d,i) => {
+      const owed = N(d.amount), paid = N(d.paid || 0), remaining = owed - paid, pct = Math.round((paid / owed) * 100);
+      const payments = Array.isArray(d.payments) ? d.payments : [];
+      return `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius2);padding:12px;margin-bottom:10px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+          <div><span class="bname">${d.name}</span><div class="bdue" style="font-size:11px;color:var(--txt3);margin-top:2px;">Due: ${d.due_date||'Not set'}</div></div>
+          <button class="rmbtn" style="font-size:11px;padding:4px 8px;" onclick="if(confirm('Delete this debt?')) removeDebt('${d.id||i}')">Delete</button>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;font-size:12px;">
+          <div><span style="color:var(--txt3);">Original:</span><span style="font-weight:700;">KES ${fmt(owed)}</span></div>
+          <div><span style="color:var(--txt3);">Paid:</span><span style="font-weight:700;color:var(--green);">KES ${fmt(paid)}</span></div>
+          <div><span style="color:var(--txt3);">Remaining:</span><span style="font-weight:700;color:${remaining > 0 ? 'var(--red)' : 'var(--green)'};">KES ${fmt(remaining)}</span></div>
+          <div><span style="color:var(--txt3);">Progress:</span><span style="font-weight:700;">${pct}%</span></div>
+        </div>
+        <div style="width:100%;height:6px;background:var(--bg3);border-radius:3px;overflow:hidden;margin-bottom:8px;"><div style="height:100%;width:${pct}%;background:var(--green);"></div></div>
+        ${remaining > 0 ? `<div style="display:flex;gap:6px;margin-bottom:8px;">
+          <input type="number" id="payment-${i}" placeholder="Payment amount" min="1" max="${remaining}" style="flex:1;border:1px solid var(--border2);border-radius:4px;padding:6px;font-size:12px;outline:none;background:var(--bg3);color:var(--txt);">
+          <button onclick="recordPayment('${d.id||i}',${i})" style="padding:6px 12px;background:var(--green);color:#fff;border:none;border-radius:4px;font-size:12px;font-weight:700;cursor:pointer;">+ Pay</button>
+        </div>` : '<div style="font-size:12px;color:var(--green);font-weight:700;padding:8px;background:rgba(34,197,94,0.1);border-radius:4px;text-align:center;">✅ Debt Cleared</div>'}
+        ${payments.length ? `<div style="font-size:11px;color:var(--txt3);margin-top:8px;padding-top:8px;border-top:1px solid var(--border);">Payment history:<div style="margin-top:4px;">${payments.map(p => `<div style="display:flex;justify-content:space-between;color:var(--txt2);margin:2px 0;"><span>${p.date||'—'}</span><span style="color:var(--green);">+KES ${fmt(p.amount)}</span></div>`).join('')}</div></div>` : ''}
+      </div>`;
+    }).join('') : '<div style="font-size:13px;color:var(--txt3);padding:8px 0;">No debts recorded.</div>'}<div class="addrow" style="grid-template-columns:1fr 1fr;"><input id="debt-name" placeholder="Creditor" type="text"><input id="debt-amt" placeholder="Amount (KES)" type="number" min="0"><input id="debt-due" placeholder="Due date" type="text" style="grid-column:1/-1;"><button onclick="addDebt()" style="grid-column:1/-1;">Add Debt</button></div></div>`;
 }
 async function addBank()   { const n = $('bank-name').value.trim(), a = N($('bank-amt').value); if (!n) return; const {data} = await db.from('banks').insert({name:n, amount:a}); if (data && data[0]) S.banks.push(JSON.parse(JSON.stringify(data[0]))); renderBanking(); }
 async function removeBank(id) { await db.from('banks').eq('id', id).delete(); S.banks = S.banks.filter(b => b.id != id); renderBanking(); }
-async function addDebt()   { const n = $('debt-name').value.trim(), a = N($('debt-amt').value), d = $('debt-due').value.trim(); if (!n) return; const {data} = await db.from('debts').insert({name:n, amount:a, due_date:d||'Not set'}); if (data && data[0]) S.debts.push(JSON.parse(JSON.stringify(data[0]))); renderBanking(); }
-async function removeDebt(id) { if (confirm('Remove this debt?')) { await db.from('debts').eq('id', id).delete(); S.debts = S.debts.filter(d => d.id != id); renderBanking(); } }
+async function addDebt()   { const n = $('debt-name').value.trim(), a = N($('debt-amt').value), d = $('debt-due').value.trim(); if (!n || a <= 0) return; const {data} = await db.from('debts').insert({name:n, amount:a, paid:0, due_date:d||'Not set', payments:[]}); if (data && data[0]) S.debts.push(JSON.parse(JSON.stringify(data[0]))); $('debt-name').value = ''; $('debt-amt').value = ''; $('debt-due').value = ''; renderBanking(); }
+async function removeDebt(id) { await db.from('debts').eq('id', id).delete(); S.debts = S.debts.filter(d => d.id != id); renderBanking(); }
+async function recordPayment(debtId, idx) {
+  const inp = $('payment-' + idx); if (!inp || !inp.value) return;
+  const amt = N(inp.value), d = S.debts[idx];
+  if (amt <= 0 || amt > (N(d.amount) - N(d.paid||0))) { alert('Invalid payment amount'); return; }
+  const ok = await confirmModal.show('Record Payment', `Record KES ${fmt(amt)} payment to ${d.name}?`, '✅ Confirm', 'var(--green)', '💳');
+  if (!ok) return;
+  const newPaid = N(d.paid||0) + amt;
+  const now = new Date();
+  const payment = {amount: amt, date: now.toLocaleDateString('en-KE',{month:'short',day:'numeric'})};
+  if (!Array.isArray(d.payments)) d.payments = [];
+  d.payments.push(payment);
+  d.paid = newPaid;
+  await db.from('debts').eq('id', debtId).update({paid: newPaid, payments: d.payments});
+  pushNotif('💳 Payment recorded', d.name + ': KES ' + fmt(amt));
+  renderBanking();
+}
 
 // ── ROADMAP ──
 function renderRoadmap() {
