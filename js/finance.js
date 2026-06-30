@@ -307,23 +307,49 @@ function loadShopData(shop) {
   const sd = $('shop-display');
   if (sd) sd.textContent = shop + ' — ' + new Date().toLocaleDateString('en-KE',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
   const d = S.shopData[shop];
+  const isSubmitted = d.submitted;
+  const canEdit = sess.isAdmin || !isSubmitted;
   
   requestAnimationFrame(() => {
     const oci = $('opening-cash-inp'); 
-    if (oci) oci.value = (d.openingCash && d.openingCash > 0) ? d.openingCash : '';
+    if (oci) {
+      oci.value = (d.openingCash && d.openingCash > 0) ? d.openingCash : '';
+      oci.disabled = !canEdit;
+      oci.style.opacity = canEdit ? '1' : '0.6';
+      oci.style.cursor = canEdit ? 'text' : 'not-allowed';
+      oci.title = !canEdit ? 'Report submitted. Contact admin to edit.' : '';
+    }
     
     GAMES.forEach(g => {
       if (!d.games[g]) d.games[g] = {open:0, close:0, topups:[]};
       const gd = d.games[g], oi = $(`${g}-open`), ci = $(`${g}-close`);
-      if (oi) oi.value = (gd.open  && gd.open  > 0) ? gd.open  : '';
-      if (ci) ci.value = (gd.close && gd.close > 0) ? gd.close : '';
+      if (oi) {
+        oi.value = (gd.open  && gd.open  > 0) ? gd.open  : '';
+        oi.disabled = !canEdit;
+        oi.style.opacity = canEdit ? '1' : '0.6';
+        oi.title = !canEdit ? 'Report submitted. Contact admin to edit.' : '';
+      }
+      if (ci) {
+        ci.value = (gd.close && gd.close > 0) ? gd.close : '';
+        ci.disabled = !canEdit;
+        ci.style.opacity = canEdit ? '1' : '0.6';
+        ci.title = !canEdit ? 'Report submitted. Contact admin to edit.' : '';
+      }
       renderTopupLog(g);
     });
     
     const rc = $('recon-cash'), rm = $('recon-mpesa');
     if (d.cashRecon) {
-      if (rc && d.cashRecon.cash)    rc.value = d.cashRecon.cash;
-      if (rm && d.cashRecon.mpesa)   rm.value = d.cashRecon.mpesa;
+      if (rc && d.cashRecon.cash) {
+        rc.value = d.cashRecon.cash;
+        rc.disabled = !canEdit;
+        rc.style.opacity = canEdit ? '1' : '0.6';
+      }
+      if (rm && d.cashRecon.mpesa) {
+        rm.value = d.cashRecon.mpesa;
+        rm.disabled = !canEdit;
+        rm.style.opacity = canEdit ? '1' : '0.6';
+      }
     } else {
       if (rc) rc.value = '';
       if (rm) rm.value = '';
@@ -332,6 +358,16 @@ function loadShopData(shop) {
       if (rd) { rd.textContent = 'Enter amounts to check'; rd.style.color = 'var(--txt3)'; }
       if (rr) rr.innerHTML = '';
     }
+    
+    // Disable submit button if already submitted for cashiers
+    const submitBtn = document.querySelector('.submitbtn');
+    if (submitBtn && isSubmitted && !sess.isAdmin) {
+      submitBtn.disabled = true;
+      submitBtn.style.opacity = '0.5';
+      submitBtn.style.cursor = 'not-allowed';
+      submitBtn.textContent = '✅ Report Submitted Today';
+    }
+    
     renderExpList(); renderCashMovLog(); updateCashMovEOD(); updateOpenedAtDisplay(); recalc();
   });
 }
@@ -638,7 +674,8 @@ async function submitReport() {
   const timeStr = now.toLocaleTimeString('en-KE',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
   const reportId = now.getTime();
   
-  // Try to save to database, but continue even if it fails (offline mode)
+  // ✅ FIX: Save to database BEFORE clearing local data (prevents data loss)
+  let dbSaved = false;
   try { 
     const {error} = await db.from('reports').insert({
       id:reportId, shop:activeShop, date:dateStr, time:timeStr, by_name:sess.name, 
@@ -646,23 +683,35 @@ async function submitReport() {
       totals:{openingCash:ocash_val, topup:tT, cashAdded: totalCashAdded, cashWithdrawn: totalCashWithdrawn, revenue:tR, expenses:tExp, net}
     }); 
     if (error) throw error;
+    dbSaved = true;
   } catch(e) {
     logError('submitReport: database save', e, {shop: activeShop, reportId});
     showWarning('⚠️ Report saved locally but could not sync to server. Will retry when connection is restored.');
   }
+  
+  // ✅ FIX: Save report to in-memory S.reports BEFORE clearing shop data
+  S.reports.unshift({id:reportId, shop:activeShop, date:dateStr, time:timeStr, by:sess.name, games:gs, expenses, cashMovements: cashMov, cashRecon:d.cashRecon||null, totals:{openingCash:ocash_val, topup:tT, cashAdded: totalCashAdded, cashWithdrawn: totalCashWithdrawn, revenue:tR, expenses:tExp, net}});
+  
+  // ✅ FEATURE: Carry over closing float as next opening float
+  const nextDayOpening = {};
+  GAMES.forEach(g => {
+    const gd = d.games[g];
+    const cl = N(gd.close);
+    nextDayOpening[g] = {open: cl, close: 0, topups: []};
+  });
 
   await AuditLog.record('submit', activeShop, 'end-of-day',
     'daily state cleared',
     `Report #${reportId} by ${sess.name} | Net KES ${fmt(net)} | Revenue KES ${fmt(tR)} | Expenses KES ${fmt(tExp)} | Cash movements KES ${fmt(totalCashAdded - totalCashWithdrawn)}`
   );
   
-  S.reports.unshift({id:reportId, shop:activeShop, date:dateStr, time:timeStr, by:sess.name, games:gs, expenses, cashMovements: cashMov, cashRecon:d.cashRecon||null, totals:{openingCash:ocash_val, topup:tT, cashAdded: totalCashAdded, cashWithdrawn: totalCashWithdrawn, revenue:tR, expenses:tExp, net}});
+  // ✅ FIX: Clear local data ONLY AFTER database and memory have been updated
   clearTimeout(recalc._t);
-  const _bg = {}; GAMES.forEach(g => { _bg[g] = {open:0, close:0, topups:[]}; });
-  S.shopData[activeShop] = {games:_bg, expenses:[], openingCash:0, cashRecon:null, cashMovements:[], openedAt:null};
-  await saveShopState(activeShop, true);
-  pushNotif('✅ Report submitted', activeShop + ' · Net KES ' + fmt(net));
   _resetting = true;
+  S.shopData[activeShop] = {games:nextDayOpening, expenses:[], openingCash:0, cashRecon:null, cashMovements:[], openedAt:null, submitted:true, submittedAt: new Date().toISOString(), submittedBy: sess.name};
+  await saveShopState(activeShop, true);
+  
+  pushNotif('✅ Report submitted', activeShop + ' · Net KES ' + fmt(net));
   alert('✅ Report submitted!\nShop: ' + activeShop + '\nNet: KES ' + fmt(net));
   _resetting = false;
   renderFinance();

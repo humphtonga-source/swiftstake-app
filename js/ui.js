@@ -147,3 +147,40 @@ document.addEventListener('visibilitychange', () => {
 window.addEventListener('beforeunload', () => {
   if (sess.name) { saveInputs(); SHOPS.forEach(sh => saveShopState(sh)); }
 });
+
+// ── PRIVACY TOGGLE (Revenue visibility) ──
+const PrivacyMode = {
+  isHidden(key) {
+    const hidden = JSON.parse(localStorage.getItem('privacy_hidden') || '{}');
+    return hidden[key] === true;
+  },
+  toggle(key) {
+    const hidden = JSON.parse(localStorage.getItem('privacy_hidden') || '{}');
+    hidden[key] = !hidden[key];
+    localStorage.setItem('privacy_hidden', JSON.stringify(hidden));
+    return hidden[key];
+  },
+  formatValue(amount, key) {
+    if (this.isHidden(key)) return 'KES ••••';
+    return 'KES ' + fmt(N(amount));
+  },
+  getToggleHtml(key, amount) {
+    const isHidden = this.isHidden(key);
+    return `<span class="privacy-val" id="privacy-${key}">${this.formatValue(amount, key)}</span><button class="privacy-toggle" onclick="togglePrivacy('${key}',event)" style="background:none;border:none;cursor:pointer;font-size:14px;padding:4px;color:var(--txt3);">${isHidden ? '👁️' : '👁️‍🗨️'}</button>`;
+  }
+};
+
+function togglePrivacy(key, e) {
+  e.preventDefault();
+  e.stopPropagation();
+  PrivacyMode.toggle(key);
+  const el = $('privacy-' + key);
+  if (el) {
+    const parent = e.target.parentElement;
+    const amount = parent.dataset.amount;
+    el.textContent = PrivacyMode.formatValue(amount, key);
+  }
+  const btn = e.target;
+  const isHidden = PrivacyMode.isHidden(key);
+  btn.textContent = isHidden ? '👁️' : '👁️‍🗨️';
+}

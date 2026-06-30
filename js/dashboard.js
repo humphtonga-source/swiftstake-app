@@ -4,7 +4,7 @@ function renderDashboard() {
   const now = new Date();
   const todayStr = now.toDateString();
   const todayRpts = S.reports.filter(r => new Date(r.id).toDateString() === todayStr);
-  const allRpts = sess.isAdmin ? S.reports : S.reports.filter(r => r.shop === sess.shop);
+  const allRpts = sess.isAdmin ? S.reports : S.reports.filter(r => r.shop === sess.shop && new Date(r.id).toDateString() === todayStr);
   const tRev = allRpts.reduce((s,r) => s + N(r.totals.revenue), 0);
   const tNet = allRpts.reduce((s,r) => s + N(r.totals.net), 0);
   const tExp = allRpts.reduce((s,r) => s + N(r.totals.expenses || (Array.isArray(r.expenses) ? r.expenses.reduce((ss,e) => ss + N(e.amount), 0) : 0)), 0);
@@ -27,10 +27,10 @@ function renderDashboard() {
   </div>
 
   <div class="quickstats">
-    <div class="qs-card"><div class="qs-icon gold">💰</div><div><div class="qs-val">KES ${fmt(tRev)}</div><div class="qs-lbl">Total Revenue</div></div></div>
-    <div class="qs-card"><div class="qs-icon ${tNet >= 0 ? 'green' : 'red'}">📈</div><div><div class="qs-val" style="color:${tNet >= 0 ? 'var(--green)' : 'var(--red)'}">KES ${fmt(tNet)}</div><div class="qs-lbl">Net Profit</div></div></div>
+    <div class="qs-card"><div class="qs-icon gold">💰</div><div><div class="qs-val" data-amount="${tRev}" style="display:flex;align-items:center;gap:6px;">${PrivacyMode.getToggleHtml('dashboard-rev', tRev)}</div><div class="qs-lbl">Total Revenue</div></div></div>
+    <div class="qs-card"><div class="qs-icon ${tNet >= 0 ? 'green' : 'red'}">📈</div><div><div class="qs-val" data-amount="${tNet}" style="color:${tNet >= 0 ? 'var(--green)' : 'var(--red)'}; display:flex;align-items:center;gap:6px;">${PrivacyMode.getToggleHtml('dashboard-net', tNet)}</div><div class="qs-lbl">Net Profit</div></div></div>
     <div class="qs-card"><div class="qs-icon blue">📋</div><div><div class="qs-val">${allRpts.length}</div><div class="qs-lbl">Total Reports</div></div></div>
-    <div class="qs-card"><div class="qs-icon ${todayNet >= 0 ? 'green' : 'red'}">☀️</div><div><div class="qs-val" style="color:${todayNet >= 0 ? 'var(--green)' : 'var(--red)'}">KES ${fmt(todayNet)}</div><div class="qs-lbl">Today's Net</div></div></div>
+    <div class="qs-card"><div class="qs-icon ${todayNet >= 0 ? 'green' : 'red'}">☀️</div><div><div class="qs-val" data-amount="${todayNet}" style="color:${todayNet >= 0 ? 'var(--green)' : 'var(--red)'}; display:flex;align-items:center;gap:6px;">${PrivacyMode.getToggleHtml('dashboard-today', todayNet)}</div><div class="qs-lbl">Today's Net</div></div></div>
   </div>
 
   ${sess.isAdmin && pendingShops.length ? `<div class="ibar">⏳ Awaiting reports: <strong>${pendingShops.join(', ')}</strong></div>` : ''}
@@ -48,7 +48,7 @@ function renderDashboard() {
       return `<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);">
         <div style="width:8px;height:8px;border-radius:50%;background:${rpt ? 'var(--green)' : 'var(--gold)'};flex-shrink:0;"></div>
         <span style="flex:1;font-weight:600;color:var(--txt);font-size:14px;">${sh}</span>
-        ${rpt ? `<span class="tag tag-green">✅ Submitted</span><span style="font-size:13px;font-weight:700;color:var(--green);">KES ${fmt(rpt.totals.net)}</span>` : `<span class="tag tag-gold">🔄 Live</span><span style="font-size:13px;font-weight:700;color:var(--gold);">KES ${fmt(liveRev)}</span>`}
+        ${rpt ? `<span class="tag tag-green">✅ Submitted</span><span style="font-size:13px;font-weight:700;color:var(--green);" data-amount="${rpt.totals.net}">${PrivacyMode.getToggleHtml('shop-' + sh, rpt.totals.net)}</span>` : `<span class="tag tag-gold">🔄 Live</span><span style="font-size:13px;font-weight:700;color:var(--gold);" data-amount="${liveRev}">${PrivacyMode.getToggleHtml('live-' + sh, liveRev)}</span>`}
         <button class="sbtn" style="font-size:12px;" onclick="goTab('finance',document.getElementById('nav-finance'));setTimeout(()=>switchShop(null,'${sh}'),200);">View →</button>
       </div>`;
     }).join('')}
@@ -73,7 +73,7 @@ function renderDashboard() {
       return `<div style="display:flex;align-items:center;gap:8px;padding:9px 0;border-bottom:1px solid var(--border);">
         <div style="width:8px;height:8px;border-radius:50%;background:${net >= 0 ? 'var(--green)' : 'var(--red)'};flex-shrink:0;"></div>
         <div style="flex:1;"><div style="font-size:13px;font-weight:600;color:var(--txt);">${r.shop}</div><div style="font-size:11px;color:var(--txt3);">${r.date}</div></div>
-        <span style="font-size:13px;font-weight:700;color:${net >= 0 ? 'var(--green)' : 'var(--red)'};">KES ${fmt(net)}</span>
+        <span style="font-size:13px;font-weight:700;color:${net >= 0 ? 'var(--green)' : 'var(--red)'};" data-amount="${net}">${PrivacyMode.getToggleHtml('report-' + r.id, net)}</span>
       </div>`;
     }).join('')}
     <button class="sbtn" style="margin-top:10px;width:100%;" onclick="goTab('history',document.getElementById('nav-history'))">View all reports →</button>

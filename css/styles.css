@@ -388,3 +388,18 @@ canvas{width:100%!important;max-height:200px;}
 }
 #confirm-modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:99999;align-items:center;justify-content:center;backdrop-filter:blur(4px);}
 #confirm-modal .inner{background:var(--surface);border:1px solid var(--border2);border-radius:var(--radius3);padding:28px;max-width:320px;width:90%;margin:auto;box-shadow:0 30px 80px rgba(0,0,0,.5);}
+
+/* ── PRIVACY TOGGLE ── */
+.privacy-val {
+  font-weight: 800;
+  color: currentColor;
+}
+
+.privacy-toggle {
+  transition: opacity 0.2s;
+  opacity: 0.6;
+}
+
+.privacy-toggle:hover {
+  opacity: 1;
+}
