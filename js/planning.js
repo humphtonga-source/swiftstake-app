@@ -40,7 +40,7 @@ function renderPList(p) {
 
 async function togglePTask(p, i) {
   S.planTasks[p][i].done = !S.planTasks[p][i].done;
-  if (S.planTasks[p][i].id) await db.from('plan_tasks').update({done: S.planTasks[p][i].done}).eq('id', S.planTasks[p][i].id);
+  if (S.planTasks[p][i].id) await db.from('plan_tasks').eq('id', S.planTasks[p][i].id).update({done: S.planTasks[p][i].done});
   renderPList(p); const el = $('pane-dashboard'); if (el && el.classList.contains('on')) renderDashboard();
 }
 
@@ -98,8 +98,8 @@ function renderProjects() {
   });
 }
 
-async function toggleMS(pid, mi) { const p = S.projects.find(x => x.id === pid); if (!p) return; p.milestones[mi].done = !p.milestones[mi].done; await db.from('projects').update({milestones:p.milestones}).eq('id', pid); if (p.milestones[mi].done) pushNotif('✅ Milestone done!', p.milestones[mi].text); renderProjects(); }
-async function addMS(pid) { const t = prompt('Milestone:'); if (!t) return; const d = prompt('Due date (optional):'); const p = S.projects.find(x => x.id === pid); if (!p) return; p.milestones.push({text:t, done:false, due:d||''}); await db.from('projects').update({milestones:p.milestones}).eq('id', pid); renderProjects(); }
+async function toggleMS(pid, mi) { const p = S.projects.find(x => x.id === pid); if (!p) return; p.milestones[mi].done = !p.milestones[mi].done; await db.from('projects').eq('id', pid).update({milestones:p.milestones}); if (p.milestones[mi].done) pushNotif('✅ Milestone done!', p.milestones[mi].text); renderProjects(); }
+async function addMS(pid) { const t = prompt('Milestone:'); if (!t) return; const d = prompt('Due date (optional):'); const p = S.projects.find(x => x.id === pid); if (!p) return; p.milestones.push({text:t, done:false, due:d||''}); await db.from('projects').eq('id', pid).update({milestones:p.milestones}); renderProjects(); }
 async function deleteProj(pid) { if (confirm('Delete project?')) { await db.from('projects').eq('id', pid).delete(); S.projects = S.projects.filter(p => p.id !== pid); renderProjects(); } }
 function toggleProjChat(pid) { const el = $('pchat-' + pid); if (el) { el.style.display = el.style.display === 'none' ? 'block' : 'none'; if (el.style.display === 'block') { const f = $('pcf-' + pid); if (f) f.scrollTop = f.scrollHeight; } } }
-async function sendProjMsg(pid) { const inp = $('pci-' + pid); const txt = inp.value.trim(); if (!txt) return; const p = S.projects.find(x => x.id === pid); if (!p) return; p.chat.push({author:sess.name, text:txt, time:new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}); await db.from('projects').update({chat:p.chat}).eq('id', pid); inp.value = ''; renderProjects(); setTimeout(() => { const el = $('pchat-' + pid); if (el) el.style.display = 'block'; const f = $('pcf-' + pid); if (f) f.scrollTop = f.scrollHeight; }, 50); }
+async function sendProjMsg(pid) { const inp = $('pci-' + pid); const txt = inp.value.trim(); if (!txt) return; const p = S.projects.find(x => x.id === pid); if (!p) return; p.chat.push({author:sess.name, text:txt, time:new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}); await db.from('projects').eq('id', pid).update({chat:p.chat}); inp.value = ''; renderProjects(); setTimeout(() => { const el = $('pchat-' + pid); if (el) el.style.display = 'block'; const f = $('pcf-' + pid); if (f) f.scrollTop = f.scrollHeight; }, 50); }

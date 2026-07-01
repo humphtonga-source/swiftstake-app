@@ -190,9 +190,9 @@ function renderFinance() {
     <div id="next-opening-floats" style="display:grid;gap:8px;"></div>
   </div>` : ''}
 
-  ${!sess.isAdmin ? `<div class="card" style="background:var(--bluel);border:1px solid rgba(59,130,246,0.2);border-radius:var(--radius2);padding:16px;margin-bottom:14px;" id="ai-coach-section">
+  <div class="card" style="background:var(--bluel);border:1px solid rgba(59,130,246,0.2);border-radius:var(--radius2);padding:16px;margin-bottom:14px;" id="ai-coach-section">
     <!-- AI Coach insights loaded here -->
-  </div>` : ''}
+  </div>
 
   <button class="submitbtn" onclick="submitReport()">✅ Submit End of Day Report</button>`;
 
@@ -339,17 +339,21 @@ function loadShopData(shop) {
   const sd = $('shop-display');
   if (sd) sd.textContent = shop + ' — ' + new Date().toLocaleDateString('en-KE',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
   const d = S.shopData[shop];
-  const isSubmitted = d.submitted;
-  const canEdit = sess.isAdmin || !isSubmitted;
+  // Opening-type fields (carried-over floats, opening cash): cashiers can NEVER edit these,
+  // only admins. This is permanent and does not depend on submission state or page refresh.
+  const canEditOpening = sess.isAdmin;
+  // Closing-type fields (closing float, reconciliation): always editable by the cashier
+  // working the shop (or admin) — this is the active, in-progress work for the day.
+  const canEditClosing = true;
   
   requestAnimationFrame(() => {
     const oci = $('opening-cash-inp'); 
     if (oci) {
       oci.value = (d.openingCash && d.openingCash > 0) ? d.openingCash : '';
-      oci.disabled = !canEdit;
-      oci.style.opacity = canEdit ? '1' : '0.6';
-      oci.style.cursor = canEdit ? 'text' : 'not-allowed';
-      oci.title = !canEdit ? 'Report submitted. Contact admin to edit.' : '';
+      oci.disabled = !canEditOpening;
+      oci.style.opacity = canEditOpening ? '1' : '0.6';
+      oci.style.cursor = canEditOpening ? 'text' : 'not-allowed';
+      oci.title = !canEditOpening ? 'Set automatically from previous day. Contact admin to edit.' : '';
     }
     
     GAMES.forEach(g => {
@@ -357,15 +361,15 @@ function loadShopData(shop) {
       const gd = d.games[g], oi = $(`${g}-open`), ci = $(`${g}-close`);
       if (oi) {
         oi.value = (gd.open  && gd.open  > 0) ? gd.open  : '';
-        oi.disabled = !canEdit;
-        oi.style.opacity = canEdit ? '1' : '0.6';
-        oi.title = !canEdit ? 'Report submitted. Contact admin to edit.' : '';
+        oi.disabled = !canEditOpening;
+        oi.style.opacity = canEditOpening ? '1' : '0.6';
+        oi.title = !canEditOpening ? 'Carried over from yesterday\'s closing float. Contact admin to edit.' : '';
       }
       if (ci) {
         ci.value = (gd.close && gd.close > 0) ? gd.close : '';
-        ci.disabled = !canEdit;
-        ci.style.opacity = canEdit ? '1' : '0.6';
-        ci.title = !canEdit ? 'Report submitted. Contact admin to edit.' : '';
+        ci.disabled = !canEditClosing;
+        ci.style.opacity = '1';
+        ci.title = '';
       }
       renderTopupLog(g);
     });
@@ -374,18 +378,15 @@ function loadShopData(shop) {
     if (d.cashRecon) {
       if (rn && d.cashRecon.notes) {
         rn.value = d.cashRecon.notes;
-        rn.disabled = !canEdit;
-        rn.style.opacity = canEdit ? '1' : '0.6';
+        rn.disabled = !canEditClosing;
       }
       if (rc && d.cashRecon.coins) {
         rc.value = d.cashRecon.coins;
-        rc.disabled = !canEdit;
-        rc.style.opacity = canEdit ? '1' : '0.6';
+        rc.disabled = !canEditClosing;
       }
       if (rm && d.cashRecon.mpesa) {
         rm.value = d.cashRecon.mpesa;
-        rm.disabled = !canEdit;
-        rm.style.opacity = canEdit ? '1' : '0.6';
+        rm.disabled = !canEditClosing;
       }
     } else {
       if (rn) rn.value = '';
@@ -397,8 +398,8 @@ function loadShopData(shop) {
       if (rr) rr.innerHTML = '';
     }
     
-    // Show next opening floats for cashiers
-    if (!sess.isAdmin && d.submitted) {
+    // Show tomorrow's opening float preview for cashiers (live preview of current closing floats)
+    if (!sess.isAdmin) {
       const nof = $('next-opening-floats');
       if (nof) {
         nof.innerHTML = GAMES.map(g => {
@@ -409,15 +410,6 @@ function loadShopData(shop) {
           </div>`;
         }).join('');
       }
-    }
-    
-    // Disable submit button if already submitted for cashiers
-    const submitBtn = document.querySelector('.submitbtn');
-    if (submitBtn && isSubmitted && !sess.isAdmin) {
-      submitBtn.disabled = true;
-      submitBtn.style.opacity = '0.5';
-      submitBtn.style.cursor = 'not-allowed';
-      submitBtn.textContent = '✅ Report Submitted Today';
     }
     
     renderExpList(); renderCashMovLog(); updateCashMovEOD(); updateOpenedAtDisplay(); recalc();
@@ -873,15 +865,34 @@ async function submitReport() {
     nextDayOpening[g] = {open: cl, close: 0, topups: []};
   });
 
+  // ✅ FEATURE: Determine tomorrow's opening cash float
+  // If an M-Pesa deposit was made today (excess sent to bank), what remains
+  // with the cashier is the threshold amount (e.g. KES 5,000).
+  // If no deposit was made (e.g. cash was at/below threshold), the full
+  // counted physical cash (notes + coins) carries over as-is.
+  const threshold = (S.cashThresholds && S.cashThresholds[activeShop]) || 5000;
+  const todayStr = now.toDateString();
+  const depositedToday = (S.mpesaDeposits || []).some(dep =>
+    dep.shop === activeShop && new Date(dep.created_at).toDateString() === todayStr
+  );
+  let nextOpeningCash;
+  if (depositedToday) {
+    nextOpeningCash = threshold;
+  } else if (d.cashRecon && (N(d.cashRecon.notes) > 0 || N(d.cashRecon.coins) > 0)) {
+    nextOpeningCash = N(d.cashRecon.notes) + N(d.cashRecon.coins);
+  } else {
+    nextOpeningCash = ocash_val; // no recon done — carry forward unchanged
+  }
+
   await AuditLog.record('submit', activeShop, 'end-of-day',
     'daily state cleared',
-    `Report #${reportId} by ${sess.name} | Net KES ${fmt(net)} | Revenue KES ${fmt(tR)} | Expenses KES ${fmt(tExp)} | Cash movements KES ${fmt(totalCashAdded - totalCashWithdrawn)}`
+    `Report #${reportId} by ${sess.name} | Net KES ${fmt(net)} | Revenue KES ${fmt(tR)} | Expenses KES ${fmt(tExp)} | Cash movements KES ${fmt(totalCashAdded - totalCashWithdrawn)} | Next opening cash: KES ${fmt(nextOpeningCash)}${depositedToday ? ' (threshold, after M-Pesa deposit)' : ' (carried full cash count)'}`
   );
   
   // ✅ FIX: Clear local data ONLY AFTER database and memory have been updated
   clearTimeout(recalc._t);
   _resetting = true;
-  S.shopData[activeShop] = {games:nextDayOpening, expenses:[], openingCash:0, cashRecon:null, cashMovements:[], openedAt:null, submitted:true, submittedAt: new Date().toISOString(), submittedBy: sess.name};
+  S.shopData[activeShop] = {games:nextDayOpening, expenses:[], openingCash:nextOpeningCash, cashRecon:null, cashMovements:[], openedAt:null, submittedAt: new Date().toISOString(), submittedBy: sess.name};
   await saveShopState(activeShop, true);
   
   pushNotif('✅ Report submitted', activeShop + ' · Net KES ' + fmt(net));
@@ -1025,7 +1036,7 @@ function getAiInsights() {
 }
 
 function renderAiCoach() {
-  if (sess.isAdmin || !$('pane-finance') || !$('pane-finance').classList.contains('on')) return;
+  if (!$('pane-finance') || !$('pane-finance').classList.contains('on')) return;
   
   const insights = getAiInsights();
   if (!insights) return;
@@ -1033,7 +1044,7 @@ function renderAiCoach() {
   const coachDiv = document.querySelector('#ai-coach-section');
   if (!coachDiv) return;
   
-  let html = `<div class="cardtitle" style="color:var(--blue);margin-bottom:12px;">🤖 AI Coach - Shop Insights</div>`;
+  let html = `<div class="cardtitle" style="color:var(--blue);margin-bottom:12px;">🤖 AI Coach — ${activeShop} Insights</div>`;
   
   if (insights.totalReports === 0) {
     html += `<div style="font-size:13px;color:var(--txt3);padding:8px;text-align:center;">Submit reports to get insights</div>`;

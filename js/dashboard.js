@@ -36,6 +36,16 @@ function renderDashboard() {
   ${sess.isAdmin && pendingShops.length ? `<div class="ibar">⏳ Awaiting reports: <strong>${pendingShops.join(', ')}</strong></div>` : ''}
   ${sess.isAdmin && submittedToday.size ? `<div class="ibar" style="background:var(--greenl);border-color:rgba(34,197,94,0.25);color:var(--green);">✅ Submitted today: <strong>${[...submittedToday].join(', ')}</strong></div>` : ''}
 
+  ${sess.isAdmin && (S.mpesaDeposits || []).filter(d => d.status === 'pending').length ? `<div class="card" style="background:var(--bluel);border:1px solid rgba(59,130,246,0.3);cursor:pointer;" onclick="goTab('banking',document.getElementById('nav-banking'))">
+    <div style="display:flex;align-items:center;gap:12px;">
+      <span style="font-size:28px;">📱</span>
+      <div style="flex:1;">
+        <div style="font-weight:700;color:var(--blue);font-size:14px;">${(S.mpesaDeposits || []).filter(d => d.status === 'pending').length} M-Pesa deposit${(S.mpesaDeposits || []).filter(d => d.status === 'pending').length !== 1 ? 's' : ''} awaiting your approval</div>
+        <div style="font-size:12px;color:var(--txt3);margin-top:2px;">Tap to review in Banking & Debts →</div>
+      </div>
+    </div>
+  </div>` : ''}
+
   ${sess.isAdmin ? `<div class="card"><div class="cardtitle">🏪 Shop Status Today</div>
     ${SHOPS.map(sh => {
       const rpt = todayRpts.find(r => r.shop === sh);

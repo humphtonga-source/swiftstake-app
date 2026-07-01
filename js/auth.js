@@ -82,6 +82,10 @@ async function bootApp() {
       const {data:dd, error:de} = await wt(db.from('debts').select('*'), 4000); 
       if (de) throw de;
       if (dd) S.debts = JSON.parse(JSON.stringify(dd));
+
+      const {data:md, error:me} = await wt(db.from('mpesa_deposits').select('*'), 4000);
+      if (me) throw me;
+      if (md) S.mpesaDeposits = JSON.parse(JSON.stringify(md));
     } catch(e) {
       logError('bootApp: banking/debts loading', e);
       showWarning('Could not load banking data from server.');
@@ -237,6 +241,24 @@ function setupNav() {
     S.staff.filter(s => s.role !== 'admin').forEach(s => {
       sel.innerHTML += `<option value="${s.name}">${s.name} (${s.shop})</option>`;
     });
+  }
+  updateBankingNavBadge();
+}
+
+function updateBankingNavBadge() {
+  const navBanking = $('nav-banking');
+  if (!navBanking || !sess.isAdmin) return;
+  const pendingCount = (S.mpesaDeposits || []).filter(d => d.status === 'pending').length;
+  let badge = navBanking.querySelector('.nav-badge');
+  if (pendingCount > 0) {
+    if (!badge) {
+      badge = document.createElement('span');
+      badge.className = 'nav-badge';
+      navBanking.appendChild(badge);
+    }
+    badge.textContent = pendingCount;
+  } else if (badge) {
+    badge.remove();
   }
 }
 

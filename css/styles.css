@@ -403,3 +403,68 @@ canvas{width:100%!important;max-height:200px;}
 .privacy-toggle:hover {
   opacity: 1;
 }
+
+/* ── PERMISSION TOGGLE SWITCH ── */
+.perm-toggle {
+  position: relative;
+  display: inline-block;
+  cursor: pointer;
+}
+.perm-toggle input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.perm-toggle-track {
+  display: block;
+  width: 34px;
+  height: 18px;
+  background: var(--bg3);
+  border: 1px solid var(--border2);
+  border-radius: 999px;
+  transition: background 0.2s, border-color 0.2s;
+  position: relative;
+}
+.perm-toggle-thumb {
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 14px;
+  height: 14px;
+  background: var(--txt3);
+  border-radius: 50%;
+  transition: transform 0.2s, background 0.2s;
+}
+.perm-toggle input:checked + .perm-toggle-track {
+  background: var(--green);
+  border-color: var(--green);
+}
+.perm-toggle input:checked + .perm-toggle-track .perm-toggle-thumb {
+  transform: translateX(16px);
+  background: #fff;
+}
+.perm-toggle-disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* ── NAV BADGE ── */
+.sitem { position: relative; }
+.nav-badge {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: var(--blue);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+}
