@@ -65,7 +65,7 @@ const exportErrorLog = () => {
 };
 
 let S = {
-  staff:[], shops:[], reports:[], shopData:{}, banks:[], debts:[], cashThresholds:{}, mpesaDeposits:[],
+  staff:[], shops:[], reports:[], shopData:{}, banks:[], debts:[], cashThresholds:{}, mpesaDeposits:[], bankWithdrawals:[], monthlyArchives:[],
   planTasks:{daily:[],weekly:[],monthly:[]}, projects:[], notifs:[], roadmap:[]
 };
 let sess = {role:'cashier', name:'', shop:'', perms:{}, isAdmin:false};

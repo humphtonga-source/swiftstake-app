@@ -104,12 +104,89 @@ function renderDashboard() {
     <button class="sbtn" style="margin-top:10px;width:100%;" onclick="goTab('history',document.getElementById('nav-history'))">View all reports →</button>
   </div>` : ''}`;
   
-  // Render rankings and trend chart on dashboard load
+  // Render rankings, trend chart, and check for month rollover on dashboard load
   setTimeout(() => {
     renderRankings('daily');
     updateCashierRanking();
     renderDashTrendChart();
+    if (sess.isAdmin) archiveCompletedMonths();
   }, 100);
+}
+
+// Permanently snapshots any fully-completed month that hasn't been archived
+// yet, so historical totals survive even though the live dashboard/rankings
+// always show a fresh view scoped to the current day/week/month.
+async function archiveCompletedMonths() {
+  const now = new Date();
+  const thisMonthKey = now.getFullYear() + '-' + (now.getMonth() + 1);
+  if (localStorage.getItem('swiftstake_lastArchiveCheck') === thisMonthKey) return;
+  localStorage.setItem('swiftstake_lastArchiveCheck', thisMonthKey);
+
+  const firstOfThisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  const prevMonthsWithData = new Set();
+  S.reports.forEach(r => {
+    const d = new Date(r.id);
+    if (d < firstOfThisMonth) prevMonthsWithData.add(d.getFullYear() + '-' + (d.getMonth() + 1));
+  });
+
+  for (const key of prevMonthsWithData) {
+    const [year, month] = key.split('-').map(Number);
+    const alreadyArchived = (S.monthlyArchives || []).some(a => a.year === year && a.month === month);
+    if (alreadyArchived) continue;
+    await archiveMonth(year, month, false);
+  }
+}
+
+async function archiveMonth(year, month, isManual) {
+  const rangeStart = new Date(year, month - 1, 1);
+  const rangeEnd = new Date(year, month, 1);
+  for (const shop of SHOPS) {
+    const rpts = S.reports.filter(r => r.shop === shop && new Date(r.id) >= rangeStart && new Date(r.id) < rangeEnd);
+    if (!rpts.length && !isManual) continue;
+    const totals = {
+      shop, year, month,
+      total_net: rpts.reduce((s,r) => s + N(r.totals.net||0), 0),
+      total_revenue: rpts.reduce((s,r) => s + N(r.totals.revenue||0), 0),
+      total_expenses: rpts.reduce((s,r) => s + N(r.totals.expenses||0), 0),
+      report_count: rpts.length,
+      archived_by: sess.name
+    };
+    try {
+      const existing = (S.monthlyArchives || []).find(a => a.shop === shop && a.year === year && a.month === month);
+      if (existing && isManual) {
+        const {error} = await db.from('monthly_archives').eq('id', existing.id).update(totals);
+        if (error) throw new Error(error.message);
+        Object.assign(existing, totals);
+      } else if (existing) {
+        continue; // auto-archive: never overwrite an already-sealed past month
+      } else {
+        const {data, error} = await db.from('monthly_archives').insert(totals);
+        if (error) throw new Error(error.message);
+        if (data && data[0]) S.monthlyArchives.push(JSON.parse(JSON.stringify(data[0])));
+      }
+    } catch(e) {
+      logError('archiveMonth', e, {shop, year, month});
+    }
+  }
+  if (isManual) pushNotif('📦 Month archived', `${month}/${year} totals saved for all shops`);
+}
+
+async function resetShopDayData(shop) {
+  const ok = await confirmModal.show(
+    '⚠️ Reset Today\'s Data',
+    `Reset ${shop}'s in-progress data for today?\n\nThis clears unsaved game floats, expenses, and reconciliation entries back to blank. It does NOT delete any already-submitted reports or history — those are permanent.`,
+    '🔄 Reset',
+    'var(--red)',
+    '⚠️'
+  );
+  if (!ok) return;
+  const blank = {}; GAMES.forEach(g => { blank[g] = {open:0, close:0, topups:[]}; });
+  S.shopData[shop] = {games:blank, expenses:[], openingCash:0, cashRecon:null, cashMovements:[], openedAt:null};
+  await saveShopState(shop, true);
+  await AuditLog.record('reset', shop, 'daily-data', 'admin manual reset', `${sess.name} reset ${shop}'s in-progress daily data`);
+  pushNotif('🔄 Shop data reset', shop + ' is back to a blank slate for today');
+  if (activeShop === shop) { renderFinance(); }
+  renderDashboard();
 }
 
 function renderDashTrendChart() {

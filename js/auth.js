@@ -86,6 +86,14 @@ async function bootApp() {
       const {data:md, error:me} = await wt(db.from('mpesa_deposits').select('*'), 4000);
       if (me) throw me;
       if (md) S.mpesaDeposits = JSON.parse(JSON.stringify(md));
+
+      const {data:wd, error:we} = await wt(db.from('bank_withdrawals').select('*'), 4000);
+      if (we) throw we;
+      if (wd) S.bankWithdrawals = JSON.parse(JSON.stringify(wd)).sort((a,b) => new Date(b.withdrawn_at) - new Date(a.withdrawn_at));
+
+      const {data:ma, error:ae} = await wt(db.from('monthly_archives').select('*'), 4000);
+      if (ae) throw ae;
+      if (ma) S.monthlyArchives = JSON.parse(JSON.stringify(ma));
     } catch(e) {
       logError('bootApp: banking/debts loading', e);
       showWarning('Could not load banking data from server.');

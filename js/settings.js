@@ -4,6 +4,9 @@ function renderBanking() {
   const tB = S.banks.reduce((s,b) => s + N(b.amount), 0), tD = S.debts.reduce((s,d) => s + (N(d.amount) - N(d.paid || 0)), 0), net = tB - tD;
   const pendingDeposits = (S.mpesaDeposits || []).filter(d => d.status === 'pending');
   const confirmedDeposits = (S.mpesaDeposits || []).filter(d => d.status === 'confirmed');
+  const debtsIndexed = S.debts.map((d, i) => ({d, i}));
+  const focusedDebts = debtsIndexed.filter(x => x.d.focused);
+  const otherDebts = debtsIndexed.filter(x => !x.d.focused);
   
   p.innerHTML = `<div class="ph"><div class="ph-icon">🏦</div><h2>Banking & Debts</h2></div>
     <div class="metrics">
@@ -28,30 +31,84 @@ function renderBanking() {
       </div>`).join('')}
     </div>` : ''}
     
-    <div class="card"><div class="cardtitle">🏦 Bank Accounts</div>${S.banks.length ? S.banks.map((b,i) => `<div class="bitem"><span class="bname">${b.name}</span><span class="bpos">KES ${fmt(b.amount)}</span><button class="rmbtn" onclick="removeBank('${b.id||i}')">Remove</button></div>`).join('') : '<div style="font-size:13px;color:var(--txt3);padding:8px 0;">No accounts added yet.</div>'}<div class="addrow"><input id="bank-name" placeholder="Account name" type="text"><input id="bank-amt" placeholder="Balance (KES)" type="number" min="0"><button onclick="addBank()">Add Account</button></div></div>
+    <div class="card"><div class="cardtitle">🏦 Shop Bank Accounts</div>
+      ${SHOPS.map(sh => {
+        const b = S.banks.find(bk => bk.shop === sh);
+        const balance = b ? N(b.amount) : 0;
+        const acctNum = b && b.account_number ? b.account_number : '';
+        const shopDeposits = confirmedDeposits.filter(d => d.shop === sh).slice(0, 3);
+        const shopWithdrawals = (S.bankWithdrawals || []).filter(w => w.shop === sh).slice(0, 3);
+        return `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius2);padding:12px;margin-bottom:10px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+            <span class="bname">${sh}</span>
+            <span style="font-size:16px;font-weight:800;color:var(--green);">KES ${fmt(balance)}</span>
+          </div>
+          <div style="display:flex;gap:6px;margin-bottom:8px;align-items:center;">
+            <span style="font-size:11px;color:var(--txt3);white-space:nowrap;">Acct #:</span>
+            <input type="text" id="acct-num-${sh}" value="${acctNum}" placeholder="Not set" style="flex:1;border:1px solid var(--border2);border-radius:4px;padding:5px 8px;font-size:12px;outline:none;background:var(--bg3);color:var(--txt);">
+            <button onclick="saveAccountNumber('${sh}')" style="padding:5px 10px;background:var(--surface2);color:var(--txt);border:1px solid var(--border2);border-radius:4px;font-size:11px;font-weight:700;cursor:pointer;">Save</button>
+          </div>
+          <div style="display:flex;gap:6px;margin-bottom:8px;">
+            <input type="number" id="wd-amt-${sh}" placeholder="Withdraw amount" min="1" max="${balance}" style="flex:1;border:1px solid var(--border2);border-radius:4px;padding:6px;font-size:12px;outline:none;background:var(--bg3);color:var(--txt);">
+            <input type="text" id="wd-reason-${sh}" placeholder="What was it for?" style="flex:1;border:1px solid var(--border2);border-radius:4px;padding:6px;font-size:12px;outline:none;background:var(--bg3);color:var(--txt);">
+            <button onclick="withdrawFromBank('${sh}')" style="padding:6px 12px;background:var(--red);color:#fff;border:none;border-radius:4px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;">− Withdraw</button>
+          </div>
+          ${shopDeposits.length || shopWithdrawals.length ? `<div style="font-size:11px;color:var(--txt3);margin-top:8px;padding-top:8px;border-top:1px solid var(--border);">
+            Recent activity:
+            <div style="margin-top:4px;">
+              ${shopDeposits.map(d => `<div style="display:flex;justify-content:space-between;color:var(--txt2);margin:2px 0;"><span>📱 M-Pesa deposit</span><span style="color:var(--green);">+KES ${fmt(d.amount)}</span></div>`).join('')}
+              ${shopWithdrawals.map(w => `<div style="display:flex;justify-content:space-between;color:var(--txt2);margin:2px 0;"><span>💸 ${w.reason}</span><span style="color:var(--red);">−KES ${fmt(w.amount)}</span></div>`).join('')}
+            </div>
+          </div>` : ''}
+        </div>`;
+      }).join('')}
+    </div>
     
-    <div class="card"><div class="cardtitle">💸 Debts & Loans</div>${S.debts.length ? S.debts.map((d,i) => {
-      const owed = N(d.amount), paid = N(d.paid || 0), remaining = owed - paid, pct = Math.round((paid / owed) * 100);
-      const payments = Array.isArray(d.payments) ? d.payments : [];
-      return `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius2);padding:12px;margin-bottom:10px;">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-          <div><span class="bname">${d.name}</span><div class="bdue" style="font-size:11px;color:var(--txt3);margin-top:2px;">Due: ${d.due_date||'Not set'}</div></div>
-          <button class="rmbtn" style="font-size:11px;padding:4px 8px;" onclick="if(confirm('Delete this debt?')) removeDebt('${d.id||i}')">Delete</button>
-        </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;font-size:12px;">
-          <div><span style="color:var(--txt3);">Original:</span><span style="font-weight:700;">KES ${fmt(owed)}</span></div>
-          <div><span style="color:var(--txt3);">Paid:</span><span style="font-weight:700;color:var(--green);">KES ${fmt(paid)}</span></div>
-          <div><span style="color:var(--txt3);">Remaining:</span><span style="font-weight:700;color:${remaining > 0 ? 'var(--red)' : 'var(--green)'};">KES ${fmt(remaining)}</span></div>
-          <div><span style="color:var(--txt3);">Progress:</span><span style="font-weight:700;">${pct}%</span></div>
-        </div>
-        <div style="width:100%;height:6px;background:var(--bg3);border-radius:3px;overflow:hidden;margin-bottom:8px;"><div style="height:100%;width:${pct}%;background:var(--green);"></div></div>
-        ${remaining > 0 ? `<div style="display:flex;gap:6px;margin-bottom:8px;">
-          <input type="number" id="payment-${i}" placeholder="Payment amount" min="1" max="${remaining}" style="flex:1;border:1px solid var(--border2);border-radius:4px;padding:6px;font-size:12px;outline:none;background:var(--bg3);color:var(--txt);">
-          <button onclick="recordPayment('${d.id||i}',${i})" style="padding:6px 12px;background:var(--green);color:#fff;border:none;border-radius:4px;font-size:12px;font-weight:700;cursor:pointer;">+ Pay</button>
-        </div>` : '<div style="font-size:12px;color:var(--green);font-weight:700;padding:8px;background:rgba(34,197,94,0.1);border-radius:4px;text-align:center;">✅ Debt Cleared</div>'}
-        ${payments.length ? `<div style="font-size:11px;color:var(--txt3);margin-top:8px;padding-top:8px;border-top:1px solid var(--border);">Payment history:<div style="margin-top:4px;">${payments.map(p => `<div style="display:flex;justify-content:space-between;color:var(--txt2);margin:2px 0;"><span>${p.date||'—'}</span><span style="color:var(--green);">+KES ${fmt(p.amount)}</span></div>`).join('')}</div></div>` : ''}
-      </div>`;
-    }).join('') : '<div style="font-size:13px;color:var(--txt3);padding:8px 0;">No debts recorded.</div>'}<div class="addrow" style="grid-template-columns:1fr 1fr;"><input id="debt-name" placeholder="Creditor" type="text"><input id="debt-amt" placeholder="Amount (KES)" type="number" min="0"><input id="debt-due" placeholder="Due date" type="text" style="grid-column:1/-1;"><button onclick="addDebt()" style="grid-column:1/-1;">Add Debt</button></div></div>`;
+    <div class="card"><div class="cardtitle">🎯 Focus Debts
+      <span style="margin-left:auto;font-size:11px;color:var(--txt3);font-weight:400;">Pick 1–3 to concentrate on</span>
+    </div>
+    ${focusedDebts.length ? focusedDebts.map(({d,i}) => renderDebtCard(d, i, true)).join('') : '<div style="font-size:13px;color:var(--txt3);padding:8px 0;">No debts focused yet. Mark one below to start a payoff plan.</div>'}
+    </div>
+
+    <div class="card"><div class="cardtitle">💸 All Debts & Loans</div>${otherDebts.length ? otherDebts.map(({d,i}) => renderDebtCard(d, i, false)).join('') : '<div style="font-size:13px;color:var(--txt3);padding:8px 0;">No other debts recorded.</div>'}<div class="addrow" style="grid-template-columns:1fr 1fr;"><input id="debt-name" placeholder="Creditor" type="text"><input id="debt-amt" placeholder="Amount (KES)" type="number" min="0"><input id="debt-due" placeholder="Due date" type="text" style="grid-column:1/-1;"><button onclick="addDebt()" style="grid-column:1/-1;">Add Debt</button></div></div>`;
+}
+
+function renderDebtCard(d, i, isFocused) {
+  const owed = N(d.amount), paid = N(d.paid || 0), remaining = owed - paid, pct = owed > 0 ? Math.round((paid / owed) * 100) : 0;
+  const payments = Array.isArray(d.payments) ? d.payments : [];
+  const targets = d.shop_targets || {};
+  const plannedTotal = Object.values(targets).reduce((s, v) => s + N(v), 0);
+  return `<div style="background:var(--bg2);border:1px solid ${isFocused ? 'rgba(245,158,11,0.35)' : 'var(--border)'};border-radius:var(--radius2);padding:12px;margin-bottom:10px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+      <div><span class="bname">${isFocused ? '🎯 ' : ''}${d.name}</span><div class="bdue" style="font-size:11px;color:var(--txt3);margin-top:2px;">Due: ${d.due_date||'Not set'}</div></div>
+      <div style="display:flex;gap:6px;">
+        <button onclick="toggleDebtFocus('${d.id||i}',${i},${!isFocused})" style="font-size:11px;padding:4px 8px;background:${isFocused ? 'var(--surface2)' : 'var(--goldl)'};color:${isFocused ? 'var(--txt2)' : 'var(--gold)'};border:1px solid ${isFocused ? 'var(--border2)' : 'rgba(245,158,11,0.3)'};border-radius:4px;font-weight:700;cursor:pointer;">${isFocused ? 'Unfocus' : '🎯 Focus'}</button>
+        <button class="rmbtn" style="font-size:11px;padding:4px 8px;" onclick="if(confirm('Delete this debt?')) removeDebt('${d.id||i}')">Delete</button>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;font-size:12px;">
+      <div><span style="color:var(--txt3);">Original:</span><span style="font-weight:700;">KES ${fmt(owed)}</span></div>
+      <div><span style="color:var(--txt3);">Paid:</span><span style="font-weight:700;color:var(--green);">KES ${fmt(paid)}</span></div>
+      <div><span style="color:var(--txt3);">Remaining:</span><span style="font-weight:700;color:${remaining > 0 ? 'var(--red)' : 'var(--green)'};">KES ${fmt(remaining)}</span></div>
+      <div><span style="color:var(--txt3);">Progress:</span><span style="font-weight:700;">${pct}%</span></div>
+    </div>
+    <div style="width:100%;height:6px;background:var(--bg3);border-radius:3px;overflow:hidden;margin-bottom:8px;"><div style="height:100%;width:${pct}%;background:var(--green);"></div></div>
+    ${isFocused ? `<div style="margin-bottom:8px;padding:10px;background:var(--surface2);border-radius:4px;">
+      <div style="font-size:11px;color:var(--txt3);font-weight:700;text-transform:uppercase;margin-bottom:6px;">Per-shop monthly target ${plannedTotal > 0 ? '· Planned: KES ' + fmt(plannedTotal) + '/mo' : ''}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+        ${SHOPS.map(sh => `<div style="display:flex;align-items:center;gap:4px;">
+          <span style="font-size:11px;color:var(--txt2);width:60px;">${sh}</span>
+          <input type="number" id="target-${d.id||i}-${sh}" value="${targets[sh] || ''}" placeholder="0" min="0" style="flex:1;width:0;border:1px solid var(--border2);border-radius:4px;padding:4px 6px;font-size:11px;outline:none;background:var(--bg3);color:var(--txt);">
+        </div>`).join('')}
+      </div>
+      <button onclick="saveDebtTargets('${d.id||i}',${i})" style="margin-top:8px;width:100%;padding:5px;background:var(--surface3);color:var(--txt);border:1px solid var(--border2);border-radius:4px;font-size:11px;font-weight:700;cursor:pointer;">Save targets</button>
+    </div>` : ''}
+    ${remaining > 0 ? `<div style="display:flex;gap:6px;margin-bottom:8px;">
+      <input type="number" id="payment-${i}" placeholder="Payment amount" min="1" max="${remaining}" style="flex:1;border:1px solid var(--border2);border-radius:4px;padding:6px;font-size:12px;outline:none;background:var(--bg3);color:var(--txt);">
+      <button onclick="recordPayment('${d.id||i}',${i})" style="padding:6px 12px;background:var(--green);color:#fff;border:none;border-radius:4px;font-size:12px;font-weight:700;cursor:pointer;">+ Pay</button>
+    </div>` : '<div style="font-size:12px;color:var(--green);font-weight:700;padding:8px;background:rgba(34,197,94,0.1);border-radius:4px;text-align:center;">✅ Debt Cleared</div>'}
+    ${payments.length ? `<div style="font-size:11px;color:var(--txt3);margin-top:8px;padding-top:8px;border-top:1px solid var(--border);">Payment history:<div style="margin-top:4px;">${payments.map(p => `<div style="display:flex;justify-content:space-between;color:var(--txt2);margin:2px 0;"><span>${p.date||'—'}</span><span style="color:var(--green);">+KES ${fmt(p.amount)}</span></div>`).join('')}</div></div>` : ''}
+  </div>`;
 }
 async function addBank()   { const n = $('bank-name').value.trim(), a = N($('bank-amt').value); if (!n) return; const {data} = await db.from('banks').insert({name:n, amount:a}); if (data && data[0]) S.banks.push(JSON.parse(JSON.stringify(data[0]))); renderBanking(); }
 async function removeBank(id) { await db.from('banks').eq('id', id).delete(); S.banks = S.banks.filter(b => b.id != id); renderBanking(); }
@@ -69,8 +126,81 @@ async function recordPayment(debtId, idx) {
   if (!Array.isArray(d.payments)) d.payments = [];
   d.payments.push(payment);
   d.paid = newPaid;
-  await db.from('debts').eq('id', debtId).update({paid: newPaid, payments: d.payments});
-  pushNotif('💳 Payment recorded', d.name + ': KES ' + fmt(amt));
+  const justCleared = newPaid >= N(d.amount) && d.focused;
+  if (justCleared) d.focused = false;
+  try {
+    const updatePayload = {paid: newPaid, payments: d.payments};
+    if (justCleared) updatePayload.focused = false;
+    const {error} = await db.from('debts').eq('id', debtId).update(updatePayload);
+    if (error) throw new Error(error.message);
+  } catch(e) {
+    logError('recordPayment', e, {debt: d.name, amount: amt});
+    d.paid = N(d.paid) - amt; d.payments.pop(); if (justCleared) d.focused = true;
+    alert('⚠️ Could not save payment. Please check your connection and try again.');
+    renderBanking();
+    return;
+  }
+  if (justCleared) {
+    pushNotif('🎉 Debt fully paid off!', `${d.name} is cleared. Choose your next focus debt.`);
+    alert(`🎉 "${d.name}" is fully paid off!\n\nPick your next debt to focus on from the list below.`);
+  } else {
+    pushNotif('💳 Payment recorded', d.name + ': KES ' + fmt(amt));
+  }
+  renderBanking();
+}
+
+async function saveAccountNumber(shop) {
+  const inp = $(`acct-num-${shop}`); if (!inp) return;
+  const acctNum = inp.value.trim();
+  const bank = S.banks.find(b => b.shop === shop);
+  if (!bank) { alert(`${shop} does not have a linked bank account yet.`); return; }
+  bank.account_number = acctNum;
+  try {
+    const {error} = await db.from('banks').eq('id', bank.id).update({account_number: acctNum});
+    if (error) throw new Error(error.message);
+    pushNotif('✅ Account number saved', `${shop}: ${acctNum || '(cleared)'}`);
+  } catch(e) {
+    logError('saveAccountNumber', e, {shop});
+    alert('⚠️ Could not save account number. Please try again.');
+  }
+}
+
+async function toggleDebtFocus(debtId, idx, focusOn) {
+  const currentlyFocused = S.debts.filter(x => x.focused).length;
+  if (focusOn && currentlyFocused >= 3) {
+    alert('You can focus on up to 3 debts at a time. Unfocus one first.');
+    return;
+  }
+  const d = S.debts[idx];
+  d.focused = focusOn;
+  try {
+    const {error} = await db.from('debts').eq('id', debtId).update({focused: focusOn});
+    if (error) throw new Error(error.message);
+  } catch(e) {
+    logError('toggleDebtFocus', e, {debt: d.name});
+    d.focused = !focusOn;
+    alert('⚠️ Could not save. Please try again.');
+  }
+  renderBanking();
+}
+
+async function saveDebtTargets(debtId, idx) {
+  const d = S.debts[idx];
+  const targets = {};
+  SHOPS.forEach(sh => {
+    const inp = $(`target-${debtId}-${sh}`);
+    const val = inp ? N(inp.value) : 0;
+    if (val > 0) targets[sh] = val;
+  });
+  d.shop_targets = targets;
+  try {
+    const {error} = await db.from('debts').eq('id', debtId).update({shop_targets: targets});
+    if (error) throw new Error(error.message);
+    pushNotif('✅ Targets saved', d.name);
+  } catch(e) {
+    logError('saveDebtTargets', e, {debt: d.name});
+    alert('⚠️ Could not save targets. Please try again.');
+  }
   renderBanking();
 }
 
@@ -212,9 +342,37 @@ function renderSettings() {
     <div id="thresholdmsg" style="margin-top:8px;font-size:13px;"></div>
   </div>` : '';
   
+  const dangerZoneHtml = sess.isAdmin ? `<div class="card" style="margin-bottom:14px;border:1px solid rgba(239,68,68,0.25);">
+    <div class="cardtitle" style="color:var(--red);">⚠️ Reset & Archive</div>
+    <div style="font-size:12px;color:var(--txt3);margin-bottom:12px;">Resetting clears a shop's unsaved data for today only — submitted reports are never deleted. Archiving stores a permanent monthly snapshot for history.</div>
+    <div style="display:grid;gap:8px;margin-bottom:14px;">
+      ${SHOPS.map(sh => `<div style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--bg2);border-radius:var(--radius2);border:1px solid var(--border);">
+        <span style="font-weight:700;flex:1;">${sh}</span>
+        <button onclick="resetShopDayData('${sh}')" style="padding:6px 12px;background:var(--redl);color:var(--red);border:1px solid rgba(239,68,68,0.3);border-radius:4px;font-size:12px;font-weight:700;cursor:pointer;">🔄 Reset Today's Data</button>
+      </div>`).join('')}
+    </div>
+    <button onclick="manualArchiveThisMonth()" style="width:100%;padding:10px;background:var(--surface2);color:var(--txt);border:1px solid var(--border2);border-radius:4px;font-size:12px;font-weight:700;cursor:pointer;">📦 Archive This Month's Totals Now</button>
+  </div>` : '';
+
+  const whatsappHtml = sess.isAdmin ? `<div class="card" style="margin-bottom:14px;">
+    <div class="cardtitle">📲 WhatsApp Report Notifications</div>
+    <div style="font-size:12px;color:var(--txt3);margin-bottom:12px;">When a cashier submits an end-of-day report, send a WhatsApp summary to this number. Requires one-time setup by the admin — see the notes below.</div>
+    <div style="display:flex;gap:6px;margin-bottom:8px;">
+      <input type="text" id="whatsapp-admin-number" value="${localStorage.getItem('swiftstake_whatsappAdminNumber') || ''}" placeholder="e.g. +254712345678" style="flex:1;border:1px solid var(--border2);border-radius:4px;padding:8px;font-size:13px;outline:none;background:var(--bg2);color:var(--txt);">
+      <button onclick="saveWhatsappNumber()" style="padding:8px 14px;background:var(--green);color:#fff;border:none;border-radius:4px;font-size:12px;font-weight:700;cursor:pointer;">Save</button>
+    </div>
+    <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--txt2);cursor:pointer;">
+      <input type="checkbox" id="whatsapp-enabled" ${localStorage.getItem('swiftstake_whatsappEnabled') === 'true' ? 'checked' : ''} onchange="localStorage.setItem('swiftstake_whatsappEnabled', this.checked)">
+      Enable WhatsApp notifications on report submission
+    </label>
+    <div style="margin-top:10px;font-size:11px;color:var(--txt3);line-height:1.5;">Setup needed once: create a WhatsApp Business sender (Twilio recommended), get one "utility" template approved by Meta for report summaries, then set the Twilio credentials as Supabase secrets. Ask your developer to finish wiring this — the notification code is in place, it just needs live credentials.</div>
+  </div>` : '';
+
   p.innerHTML = `<div class="ph"><div class="ph-icon">⚙️</div><h2>Settings</h2></div>
     ${shopHtml}
     ${cashThresholdHtml}
+    ${whatsappHtml}
+    ${dangerZoneHtml}
     <div class="card" style="margin-bottom:14px;"><div class="cardtitle">👥 Staff & Permissions</div><div id="staff-tbl-wrap">${buildStaffTable()}</div>
       <div class="addstaffgrid">
         <input id="auth-name" placeholder="Full name" type="text">
@@ -237,7 +395,7 @@ function renderSettings() {
 }
 
 async function saveShopName(i) { const inp = $('shopname-inp-' + i); if (!inp) return; const newName = inp.value.trim(), oldName = S.shops[i].name; if (!newName) { alert('Shop name cannot be empty.'); return; } if (newName === oldName) { $('shopname-display-' + i).style.display = ''; $('shopname-inp-' + i).style.display = 'none'; $('edit-btn-' + i).style.display = ''; $('save-btn-' + i).style.display = 'none'; return; } if (SHOPS.includes(newName)) { alert('A shop with that name already exists.'); return; } const msg = $('shopmsg'); if (msg) { msg.textContent = '⏳ Saving...'; msg.className = ''; } try { await db.from('shops').eq('id', S.shops[i].id).update({name:newName}); await db.from('shop_state').eq('shop', oldName).update({shop:newName}); S.shops[i].name = newName; const idx = SHOPS.indexOf(oldName); if (idx > -1) SHOPS[idx] = newName; if (S.shopData[oldName]) { S.shopData[newName] = S.shopData[oldName]; delete S.shopData[oldName]; } if (activeShop === oldName) activeShop = newName; if (msg) { msg.textContent = '✅ Renamed to ' + newName; msg.className = 'succ'; } renderSettings(); setTimeout(() => { const m = $('shopmsg'); if (m) m.textContent = ''; }, 3500); } catch(e) { if (msg) { msg.textContent = '❌ Error renaming.'; msg.className = 'fail'; } } }
-async function addShop() { const inp = $('new-shop-name'), msg = $('shopmsg'), name = inp ? inp.value.trim() : ''; if (!name) { if (msg) { msg.textContent = '⚠️ Enter a shop name.'; msg.className = 'fail'; } return; } if (SHOPS.map(s => s.toLowerCase()).includes(name.toLowerCase())) { if (msg) { msg.textContent = '⚠️ Shop already exists.'; msg.className = 'fail'; } return; } if (msg) { msg.textContent = '⏳ Creating...'; msg.className = ''; } try { const {error} = await db.from('shops').insert({name}); if (error) throw new Error(error.message); const {data:f} = await db.from('shops').select('id,name').eq('name', name).limit(1); const ns = f && f[0] ? JSON.parse(JSON.stringify(f[0])) : {id:Date.now(), name}; S.shops.push(ns); SHOPS.push(name); S.shopData[name] = {games:{stellar:{open:0,close:0,topups:[]},pilot:{open:0,close:0,topups:[]},spin:{open:0,close:0,topups:[]}}, expenses:[], openingCash:0, cashRecon:null}; await db.from('shop_state').insert({shop:name, games:{stellar:{open:0,close:0,topups:[]},pilot:{open:0,close:0,topups:[]},spin:{open:0,close:0,topups:[]}}, expenses:[], opening_cash:0, cash_recon:null, cash_movements:[], updated_at:new Date().toISOString()}); if (inp) inp.value = ''; if (msg) { msg.textContent = '✅ "' + name + '" created!'; msg.className = 'succ'; } renderSettings(); setTimeout(() => { const m = $('shopmsg'); if (m) m.textContent = ''; }, 3500); } catch(e) { if (msg) { msg.textContent = '❌ ' + e.message; msg.className = 'fail'; } } }
+async function addShop() { const inp = $('new-shop-name'), msg = $('shopmsg'), name = inp ? inp.value.trim() : ''; if (!name) { if (msg) { msg.textContent = '⚠️ Enter a shop name.'; msg.className = 'fail'; } return; } if (SHOPS.map(s => s.toLowerCase()).includes(name.toLowerCase())) { if (msg) { msg.textContent = '⚠️ Shop already exists.'; msg.className = 'fail'; } return; } if (msg) { msg.textContent = '⏳ Creating...'; msg.className = ''; } try { const {error} = await db.from('shops').insert({name}); if (error) throw new Error(error.message); const {data:f} = await db.from('shops').select('id,name').eq('name', name).limit(1); const ns = f && f[0] ? JSON.parse(JSON.stringify(f[0])) : {id:Date.now(), name}; S.shops.push(ns); SHOPS.push(name); S.shopData[name] = {games:{stellar:{open:0,close:0,topups:[]},pilot:{open:0,close:0,topups:[]},spin:{open:0,close:0,topups:[]}}, expenses:[], openingCash:0, cashRecon:null}; await db.from('shop_state').insert({shop:name, games:{stellar:{open:0,close:0,topups:[]},pilot:{open:0,close:0,topups:[]},spin:{open:0,close:0,topups:[]}}, expenses:[], opening_cash:0, cash_recon:null, cash_movements:[], updated_at:new Date().toISOString()}); const {data:nb} = await db.from('banks').insert({name:name + ' Bank Account', amount:0, shop:name}); if (nb && nb[0]) S.banks.push(JSON.parse(JSON.stringify(nb[0]))); if (inp) inp.value = ''; if (msg) { msg.textContent = '✅ "' + name + '" created!'; msg.className = 'succ'; } renderSettings(); setTimeout(() => { const m = $('shopmsg'); if (m) m.textContent = ''; }, 3500); } catch(e) { if (msg) { msg.textContent = '❌ ' + e.message; msg.className = 'fail'; } } }
 async function deleteShop(i) { const sh = S.shops[i]; if (!sh) return; const ok = await confirmModal.show('Delete Shop', 'Delete "' + sh.name + '"? Historical reports are kept.', '🗑️ Delete', 'var(--red)', '⚠️'); if (!ok) return; const msg = $('shopmsg'); if (msg) { msg.textContent = '⏳ Deleting...'; msg.className = ''; } try { await db.from('shops').eq('id', sh.id).delete(); await db.from('shop_state').eq('shop', sh.name).delete(); S.shops.splice(i, 1); const idx = SHOPS.indexOf(sh.name); if (idx > -1) SHOPS.splice(idx, 1); delete S.shopData[sh.name]; if (activeShop === sh.name) activeShop = SHOPS[0] || ''; if (msg) { msg.textContent = '✅ Deleted.'; msg.className = 'succ'; } renderSettings(); setTimeout(() => { const m = $('shopmsg'); if (m) m.textContent = ''; }, 3500); } catch(e) { if (msg) { msg.textContent = '❌ ' + e.message; msg.className = 'fail'; } } }
 async function togglePerm(i, k, v) {
   S.staff[i].perms[k] = v;
@@ -321,4 +479,80 @@ async function confirmMpesaDeposit(depId, idx) {
   updateBankingNavBadge();
   await AuditLog.record('confirm', dep.shop, 'mpesa-deposit', 'M-Pesa deposit confirmed', `KES ${fmt(amt)} · Ref: ${dep.reference} · Bank updated`);
   renderBanking();
+}
+
+async function withdrawFromBank(shop) {
+  const amtInp = $(`wd-amt-${shop}`), reasonInp = $(`wd-reason-${shop}`);
+  if (!amtInp || !reasonInp) return;
+  const amt = N(amtInp.value), reason = reasonInp.value.trim();
+  const bank = S.banks.find(b => b.shop === shop);
+  const balance = bank ? N(bank.amount) : 0;
+
+  if (amt <= 0) { alert('Enter a valid withdrawal amount.'); return; }
+  if (!reason) { alert('Please indicate what the withdrawal was for.'); reasonInp.focus(); return; }
+  if (amt > balance) { alert(`Cannot withdraw KES ${fmt(amt)} — ${shop} bank account only has KES ${fmt(balance)}.`); return; }
+  if (!bank) { alert(`${shop} does not have a linked bank account yet.`); return; }
+
+  const ok = await confirmModal.show('Confirm Withdrawal', `Withdraw KES ${fmt(amt)} from ${shop}'s bank account?\n\nFor: ${reason}`, '💸 Withdraw', 'var(--red)', '⚠️');
+  if (!ok) return;
+
+  const newBalance = balance - amt;
+  bank.amount = newBalance;
+  try {
+    const {error} = await db.from('banks').eq('id', bank.id).update({amount: newBalance});
+    if (error) throw new Error(error.message);
+  } catch(e) {
+    logError('withdrawFromBank - updateBank', e);
+    bank.amount = balance; // revert local state
+    alert('⚠️ Could not save withdrawal. Please check your connection and try again.');
+    return;
+  }
+
+  const withdrawal = {shop, amount: amt, reason, withdrawn_by: sess.name, withdrawn_at: new Date().toISOString()};
+  try {
+    const {data, error} = await db.from('bank_withdrawals').insert(withdrawal);
+    if (error) throw new Error(error.message);
+    if (!S.bankWithdrawals) S.bankWithdrawals = [];
+    S.bankWithdrawals.unshift(data && data[0] ? JSON.parse(JSON.stringify(data[0])) : withdrawal);
+  } catch(e) {
+    logError('withdrawFromBank - insert record', e);
+  }
+
+  await AuditLog.record('withdraw', shop, 'bank', `balance was KES ${fmt(balance)}`, `Withdrew KES ${fmt(amt)} for "${reason}" · New balance: KES ${fmt(newBalance)}`);
+  pushNotif('💸 Withdrawal recorded', `${shop}: KES ${fmt(amt)} for ${reason}`);
+  renderBanking();
+}
+
+async function manualArchiveThisMonth() {
+  const now = new Date();
+  const ok = await confirmModal.show('📦 Archive This Month', `Save a permanent snapshot of this month's totals for all shops so far?\n\nThis does not delete or hide anything — reports stay fully visible in History.`, '📦 Archive', 'var(--blue)', '📦');
+  if (!ok) return;
+  await archiveMonth(now.getFullYear(), now.getMonth() + 1, true);
+}
+
+function saveWhatsappNumber() {
+  const inp = $('whatsapp-admin-number');
+  if (!inp) return;
+  localStorage.setItem('swiftstake_whatsappAdminNumber', inp.value.trim());
+  pushNotif('✅ WhatsApp number saved', inp.value.trim());
+}
+
+// Fires a WhatsApp notification via the whatsapp-notify Edge Function.
+// Silently no-ops if notifications are disabled or not yet configured -
+// this must never block or break report submission.
+async function notifyWhatsApp(reportSummary) {
+  if (localStorage.getItem('swiftstake_whatsappEnabled') !== 'true') return;
+  const number = localStorage.getItem('swiftstake_whatsappAdminNumber');
+  if (!number) return;
+  try {
+    await fetch(SUPABASE_URL + '/functions/v1/whatsapp-notify', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', 'apikey': SUPABASE_KEY},
+      body: JSON.stringify({to: number, ...reportSummary})
+    });
+  } catch(e) {
+    logError('notifyWhatsApp', e);
+    // Deliberately no user-facing alert - a failed WhatsApp ping should
+    // never make the cashier think their report submission failed.
+  }
 }
