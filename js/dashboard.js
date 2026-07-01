@@ -36,6 +36,8 @@ function renderDashboard() {
   ${sess.isAdmin && pendingShops.length ? `<div class="ibar">⏳ Awaiting reports: <strong>${pendingShops.join(', ')}</strong></div>` : ''}
   ${sess.isAdmin && submittedToday.size ? `<div class="ibar" style="background:var(--greenl);border-color:rgba(34,197,94,0.25);color:var(--green);">✅ Submitted today: <strong>${[...submittedToday].join(', ')}</strong></div>` : ''}
 
+  <div class="chartwrap"><div class="charttitle">📈 7-Day Net Profit Trend</div><div class="chartsub">${sess.isAdmin ? 'All shops combined' : sess.shop}</div><canvas id="chart-dash-trend" height="150"></canvas></div>
+
   ${sess.isAdmin && (S.mpesaDeposits || []).filter(d => d.status === 'pending').length ? `<div class="card" style="background:var(--bluel);border:1px solid rgba(59,130,246,0.3);cursor:pointer;" onclick="goTab('banking',document.getElementById('nav-banking'))">
     <div style="display:flex;align-items:center;gap:12px;">
       <span style="font-size:28px;">📱</span>
@@ -102,11 +104,30 @@ function renderDashboard() {
     <button class="sbtn" style="margin-top:10px;width:100%;" onclick="goTab('history',document.getElementById('nav-history'))">View all reports →</button>
   </div>` : ''}`;
   
-  // Render rankings on dashboard load
+  // Render rankings and trend chart on dashboard load
   setTimeout(() => {
     renderRankings('daily');
     updateCashierRanking();
+    renderDashTrendChart();
   }, 100);
+}
+
+function renderDashTrendChart() {
+  const cv = $('chart-dash-trend'); if (!cv) return;
+  const days = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    days.push(d);
+  }
+  const scoped = sess.isAdmin ? S.reports : S.reports.filter(r => r.shop === sess.shop);
+  const dayNets = days.map(day => {
+    const dayStr = day.toDateString();
+    return scoped.filter(r => new Date(r.id).toDateString() === dayStr)
+      .reduce((s, r) => s + N(r.totals.net || 0), 0);
+  });
+  const labels = days.map(d => d.toLocaleDateString('en-KE', {weekday: 'short'}));
+  dChart('chart-dash-trend', 'line', labels, dayNets, '#22c55e');
 }
 
 function renderRankings(period = 'daily') {
