@@ -64,9 +64,9 @@ async function getAISugg() {
   const prompt = `Business advisor for SwiftStake Kenya betting shops (${SHOPS.join(', ')}; games: ${GAMES.join(', ')}). Net profits: ${SHOPS.map(s => s + ' KES ' + fmt(sN[s])).join(', ')}. Generate 3-4 practical ${active} tasks. Short numbered list, under 120 words.`;
   const el = $('ai-' + active); if (!el) return; el.style.display = 'block'; el.innerHTML = '🤖 Getting AI suggestions...';
   try {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({model:'claude-sonnet-4-20250514', max_tokens:400, messages:[{role:'user', content:prompt}]})});
-    const data = await res.json(); el.innerHTML = '<strong style="color:var(--blue);">🤖 AI Suggestions:</strong><br><br>' + (data.content?.[0]?.text || 'Could not generate.').replace(/\n/g, '<br>');
-  } catch(e) { el.innerHTML = '⚠️ Connection error.'; }
+    const text = await askAI(prompt, {max_tokens: 400});
+    el.innerHTML = '<strong style="color:var(--blue);">🤖 AI Suggestions:</strong><br><br>' + (text || 'Could not generate.').replace(/\n/g, '<br>');
+  } catch(e) { logError('getAISugg', e); el.innerHTML = '⚠️ ' + (e.message || 'Connection error.'); }
 }
 
 function openProjModal() { if (!sess.isAdmin) return; openModal('proj-modal'); $('proj-start').value = new Date().toISOString().split('T')[0]; }

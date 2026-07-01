@@ -896,7 +896,6 @@ async function submitReport() {
   await saveShopState(activeShop, true);
   
   pushNotif('✅ Report submitted', activeShop + ' · Net KES ' + fmt(net));
-  notifyWhatsApp({shop: activeShop, date: dateStr, net, revenue: tR, expenses: tExp, by: sess.name});
   alert('✅ Report submitted!\nShop: ' + activeShop + '\nNet: KES ' + fmt(net));
   _resetting = false;
   renderFinance();

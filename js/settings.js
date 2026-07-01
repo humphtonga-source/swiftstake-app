@@ -254,7 +254,10 @@ async function getGameAI() {
   if (!sess.isAdmin) return; const box = $('game-ai-box'), res = $('game-ai-result'); if (!box || !res) return; box.style.display = 'block'; res.textContent = '🤖 Analysing...';
   const stats = {}; GAMES.forEach(g => { stats[g] = {revenue:0, effective:0}; }); S.reports.forEach(r => GAMES.forEach(g => { const gd = r.games[g] || {}; stats[g].revenue += N(gd.revenue); stats[g].effective += N(gd.effective); }));
   const prompt = `Betting analyst for SwiftStake Kenya (shops: ${SHOPS.join(', ')}; games: ${GAMES.join(', ')}).\nGAME DATA: ${GAMES.map(g => { const s = stats[g], rtp = s.effective > 0 ? ((s.effective - s.revenue) / s.effective * 100) : 0, margin = s.effective > 0 ? (s.revenue / s.effective * 100) : 0; return `${g.toUpperCase()}: Revenue KES ${fmt(s.revenue)}, Margin ${margin.toFixed(1)}%, RTP ${rtp.toFixed(1)}%`; }).join('; ')}\nProvide: 1) Best game 2) RTP health 3) Recommendations. Under 200 words.`;
-  try { const resp = await fetch('https://api.anthropic.com/v1/messages', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({model:'claude-sonnet-4-20250514', max_tokens:800, messages:[{role:'user', content:prompt}]})}); const data = await resp.json(); res.textContent = data.content?.[0]?.text || 'Could not generate.'; } catch(e) { res.textContent = '⚠️ Connection error.'; }
+  try {
+    const text = await askAI(prompt, {max_tokens: 800});
+    res.textContent = text || 'Could not generate.';
+  } catch(e) { logError('getGameAI', e); res.textContent = '⚠️ ' + (e.message || 'Connection error.'); }
 }
 
 // ── AI SUMMARY ──
@@ -289,13 +292,12 @@ async function generateSummary() {
   const tD = S.debts.reduce((s,d) => s + N(d.amount), 0), tB = S.banks.reduce((s,b) => s + N(b.amount), 0);
   const prompt = `Senior analyst for SwiftStake Kenya (shops: ${SHOPS.join(', ')}; games: ${GAMES.join(', ')}).\n\n${pl.toUpperCase()} (${rpts.length} reports):\nRevenue: KES ${fmt(tRev)} | Expenses: KES ${fmt(tExp)} | Net: KES ${fmt(tNet)}\nShops: ${SHOPS.map(s => s + ' KES ' + fmt(sN[s])).join(', ')}\nGames: ${GAMES.map(g => g + ' KES ' + fmt(gN[g])).join(', ')}\nBank: KES ${fmt(tB)} | Debts: KES ${fmt(tD)}\n\nWrite summary: 1) Performance verdict 2) Shop analysis 3) Game performance 4) Financial health 5) Recommendations. 350-450 words.`;
   try {
-    const resp = await fetch('https://api.anthropic.com/v1/messages', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({model:'claude-sonnet-4-20250514', max_tokens:1500, messages:[{role:'user', content:prompt}]})});
-    const data = await resp.json(); const text = data.content?.[0]?.text || 'Could not generate.';
-    if (res) res.textContent = text;
+    const text = await askAI(prompt, {max_tokens: 1500});
+    if (res) res.textContent = text || 'Could not generate.';
     const dateStr = new Date().toLocaleDateString('en-KE');
     await db.from('ai_summaries').insert({period:pl, date:dateStr, text, report_count:rpts.length});
     savedSummaries.unshift({period:pl, date:dateStr, text, reports:rpts.length}); renderSummaryHistory();
-  } catch(e) { if (res) res.textContent = '⚠️ Connection error.'; }
+  } catch(e) { logError('generateSummary', e); if (res) res.textContent = '⚠️ ' + (e.message || 'Connection error.'); }
 }
 
 function copySummary() { const t = $('summary-result')?.textContent; if (t && navigator.clipboard) navigator.clipboard.writeText(t).then(() => alert('Copied!')); }
@@ -354,24 +356,9 @@ function renderSettings() {
     <button onclick="manualArchiveThisMonth()" style="width:100%;padding:10px;background:var(--surface2);color:var(--txt);border:1px solid var(--border2);border-radius:4px;font-size:12px;font-weight:700;cursor:pointer;">📦 Archive This Month's Totals Now</button>
   </div>` : '';
 
-  const whatsappHtml = sess.isAdmin ? `<div class="card" style="margin-bottom:14px;">
-    <div class="cardtitle">📲 WhatsApp Report Notifications</div>
-    <div style="font-size:12px;color:var(--txt3);margin-bottom:12px;">When a cashier submits an end-of-day report, send a WhatsApp summary to this number. Requires one-time setup by the admin — see the notes below.</div>
-    <div style="display:flex;gap:6px;margin-bottom:8px;">
-      <input type="text" id="whatsapp-admin-number" value="${localStorage.getItem('swiftstake_whatsappAdminNumber') || ''}" placeholder="e.g. +254712345678" style="flex:1;border:1px solid var(--border2);border-radius:4px;padding:8px;font-size:13px;outline:none;background:var(--bg2);color:var(--txt);">
-      <button onclick="saveWhatsappNumber()" style="padding:8px 14px;background:var(--green);color:#fff;border:none;border-radius:4px;font-size:12px;font-weight:700;cursor:pointer;">Save</button>
-    </div>
-    <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--txt2);cursor:pointer;">
-      <input type="checkbox" id="whatsapp-enabled" ${localStorage.getItem('swiftstake_whatsappEnabled') === 'true' ? 'checked' : ''} onchange="localStorage.setItem('swiftstake_whatsappEnabled', this.checked)">
-      Enable WhatsApp notifications on report submission
-    </label>
-    <div style="margin-top:10px;font-size:11px;color:var(--txt3);line-height:1.5;">Setup needed once: create a WhatsApp Business sender (Twilio recommended), get one "utility" template approved by Meta for report summaries, then set the Twilio credentials as Supabase secrets. Ask your developer to finish wiring this — the notification code is in place, it just needs live credentials.</div>
-  </div>` : '';
-
   p.innerHTML = `<div class="ph"><div class="ph-icon">⚙️</div><h2>Settings</h2></div>
     ${shopHtml}
     ${cashThresholdHtml}
-    ${whatsappHtml}
     ${dangerZoneHtml}
     <div class="card" style="margin-bottom:14px;"><div class="cardtitle">👥 Staff & Permissions</div><div id="staff-tbl-wrap">${buildStaffTable()}</div>
       <div class="addstaffgrid">
@@ -528,31 +515,4 @@ async function manualArchiveThisMonth() {
   const ok = await confirmModal.show('📦 Archive This Month', `Save a permanent snapshot of this month's totals for all shops so far?\n\nThis does not delete or hide anything — reports stay fully visible in History.`, '📦 Archive', 'var(--blue)', '📦');
   if (!ok) return;
   await archiveMonth(now.getFullYear(), now.getMonth() + 1, true);
-}
-
-function saveWhatsappNumber() {
-  const inp = $('whatsapp-admin-number');
-  if (!inp) return;
-  localStorage.setItem('swiftstake_whatsappAdminNumber', inp.value.trim());
-  pushNotif('✅ WhatsApp number saved', inp.value.trim());
-}
-
-// Fires a WhatsApp notification via the whatsapp-notify Edge Function.
-// Silently no-ops if notifications are disabled or not yet configured -
-// this must never block or break report submission.
-async function notifyWhatsApp(reportSummary) {
-  if (localStorage.getItem('swiftstake_whatsappEnabled') !== 'true') return;
-  const number = localStorage.getItem('swiftstake_whatsappAdminNumber');
-  if (!number) return;
-  try {
-    await fetch(SUPABASE_URL + '/functions/v1/whatsapp-notify', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json', 'apikey': SUPABASE_KEY},
-      body: JSON.stringify({to: number, ...reportSummary})
-    });
-  } catch(e) {
-    logError('notifyWhatsApp', e);
-    // Deliberately no user-facing alert - a failed WhatsApp ping should
-    // never make the cashier think their report submission failed.
-  }
 }

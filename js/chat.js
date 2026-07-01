@@ -122,14 +122,14 @@ async function callAI(q, ch) {
   const tD = S.debts.reduce((s,d) => s + N(d.amount), 0), tB = S.banks.reduce((s,b) => s + N(b.amount), 0);
   const ctx = `You are SwiftStake AI for a Kenyan betting chain (shops: ${SHOPS.join(', ')}; games: ${GAMES.join(', ')}). Net profits: ${SHOPS.map(s => s + ' KES ' + fmt(sN[s])).join(', ')}. Bank: KES ${fmt(tB)}. Debts: KES ${fmt(tD)}. Reports: ${S.reports.length}. Be concise, under 200 words.`;
   try {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({model:'claude-sonnet-4-20250514', max_tokens:1000, system:ctx, messages:[{role:'user', content:q}]})});
-    const data = await res.json(); const reply = data.content?.[0]?.text || 'Sorry, try again.';
+    const reply = await askAI(q, {system: ctx, max_tokens: 1000});
     try { feed.removeChild(typing); } catch(e) {}
-    channels[ch].push({author:'SwiftStake AI', text:reply, time:new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}), isAdmin:false, images:[]});
+    channels[ch].push({author:'SwiftStake AI', text:reply || 'Sorry, try again.', time:new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}), isAdmin:false, images:[]});
     renderFeed(); await db.from('messages').insert({channel:ch, author:'SwiftStake AI', text:reply, is_admin:false, images:[]});
   } catch(e) {
+    logError('callAI', e);
     try { feed.removeChild(typing); } catch(err) {}
-    channels[ch].push({author:'SwiftStake AI', text:'Connection error. Try again.', time:new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}), isAdmin:false, images:[]});
+    channels[ch].push({author:'SwiftStake AI', text:'⚠️ ' + (e.message || 'Connection error. Try again.'), time:new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}), isAdmin:false, images:[]});
     renderFeed();
   }
 }

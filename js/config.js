@@ -68,6 +68,30 @@ let S = {
   staff:[], shops:[], reports:[], shopData:{}, banks:[], debts:[], cashThresholds:{}, mpesaDeposits:[], bankWithdrawals:[], monthlyArchives:[],
   planTasks:{daily:[],weekly:[],monthly:[]}, projects:[], notifs:[], roadmap:[]
 };
+
+// Calls Claude through the ai-proxy Supabase Edge Function rather than
+// api.anthropic.com directly. A browser can never safely hold an
+// Anthropic API key, and api.anthropic.com blocks direct calls from web
+// pages anyway (CORS) - the proxy holds the key server-side as a
+// Supabase secret and forwards the request.
+// Returns the response text, or throws with a readable message on failure.
+async function askAI(prompt, opts) {
+  opts = opts || {};
+  const resp = await fetch(SUPABASE_URL + '/functions/v1/ai-proxy', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json', 'apikey': SUPABASE_KEY},
+    body: JSON.stringify({
+      prompt: prompt,
+      system: opts.system,
+      max_tokens: opts.max_tokens || 800,
+    })
+  });
+  const data = await resp.json();
+  if (!resp.ok || data.error) {
+    throw new Error(data.error || ('AI request failed (' + resp.status + ')'));
+  }
+  return data.text || '';
+}
 let sess = {role:'cashier', name:'', shop:'', perms:{}, isAdmin:false};
 let activeShop = 'Kiawara';
 let selRole_ = 'cashier';
