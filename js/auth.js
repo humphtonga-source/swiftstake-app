@@ -189,7 +189,31 @@ async function doLogin() {
   if (!name) { showErr('Please enter your name.'); return; }
   if (pin.length < 4) { showErr('Please enter your 4-digit PIN.'); return; }
   $('lerr').style.display = 'none';
-  const m = S.staff.find(s => s.name.toLowerCase() === name.toLowerCase() && s.pin === pin && (s.shop === shop || s.shop === 'All'));
+
+  let m = null;
+  try {
+    const resp = await fetch(SUPABASE_URL + '/functions/v1/login', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', 'apikey': SUPABASE_KEY},
+      body: JSON.stringify({name, pin, shop})
+    });
+    const data = await resp.json();
+    if (resp.ok && data.staff && data.token) {
+      m = data.staff;
+      sessToken = data.token;
+    }
+  } catch(e) {
+    logError('doLogin - login service', e);
+  }
+
+  // Safe fallback: if the login service isn't configured yet (or is
+  // briefly unreachable), match against the already-loaded staff list
+  // exactly as before - login must never break during this rollout.
+  if (!m) {
+    m = S.staff.find(s => s.name.toLowerCase() === name.toLowerCase() && s.pin === pin && (s.shop === shop || s.shop === 'All'));
+    sessToken = null;
+  }
+
   if (!m) { showErr('Name or PIN not recognised.'); clrPins(); return; }
   if (selRole_ === 'admin' && m.role !== 'admin') { showErr('You are not registered as an administrator.'); clrPins(); return; }
   if (selRole_ === 'cashier' && m.role === 'admin') { showErr('Administrators must sign in using the Admin option.'); clrPins(); return; }
@@ -200,6 +224,8 @@ async function doLogin() {
   try {
     localStorage.setItem('swiftstake_session', JSON.stringify(sess));
     localStorage.setItem('swiftstake_activeShop', activeShop);
+    if (sessToken) localStorage.setItem('swiftstake_token', sessToken);
+    else localStorage.removeItem('swiftstake_token');
   } catch(e) {}
   
   $('login').style.display = 'none';
@@ -214,10 +240,13 @@ function doLogout() {
   if (realtimeSub) { db.removeChannel(realtimeSub); realtimeSub = null; }
   if (realtimeDataSub) { db.removeChannel(realtimeDataSub); realtimeDataSub = null; }
   
+  sessToken = null;
+  
   // Clear session from localStorage
   try {
     localStorage.removeItem('swiftstake_session');
     localStorage.removeItem('swiftstake_activeShop');
+    localStorage.removeItem('swiftstake_token');
   } catch(e) {}
   
   $('app').style.display = 'none';

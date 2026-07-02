@@ -19,16 +19,23 @@ function xhrRequest(method, url, headers, body) {
   });
 }
 
-const BASE_HEADERS = {
-  'apikey': SUPABASE_KEY,
-  'Authorization': 'Bearer ' + SUPABASE_KEY,
-  'Content-Type': 'application/json',
-  'Accept': 'application/json'
-};
+function authHeaders() {
+  // When sessToken is set (login Edge Function is configured and this
+  // person is signed in), send their real per-user JWT so RLS can see
+  // who's asking. Otherwise fall back to the publishable key exactly as
+  // before - this must never be the thing that breaks a login.
+  const bearer = sessToken || SUPABASE_KEY;
+  return {
+    'apikey': SUPABASE_KEY,
+    'Authorization': 'Bearer ' + bearer,
+    'Content-Type': 'application/json',
+    'Accept': 'application/json'
+  };
+}
 
 function dbReq(method, table, qs, body, extra) {
   return xhrRequest(method, SUPABASE_URL + '/rest/v1/' + table + (qs ? '?' + qs : ''),
-    Object.assign({}, BASE_HEADERS, extra || {}), body);
+    Object.assign({}, authHeaders(), extra || {}), body);
 }
 
 function buildChain(table, filters, cols, orders, lim) {

@@ -93,6 +93,10 @@ async function askAI(prompt, opts) {
   return data.text || '';
 }
 let sess = {role:'cashier', name:'', shop:'', perms:{}, isAdmin:false};
+// Per-user JWT from the login Edge Function, once that's configured.
+// Null means "not using it yet" - every request safely falls back to
+// the shared publishable key, exactly as the app has always worked.
+let sessToken = null;
 let activeShop = 'Kiawara';
 let selRole_ = 'cashier';
 let chartObjs = {};
