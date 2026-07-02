@@ -400,7 +400,29 @@ async function togglePerm(i, k, v) {
 }
 async function addStaff() { const nEl = $('auth-name'), sEl = $('auth-shop'), pEl = $('auth-pin'), rEl = $('auth-role'), msg = $('staffmsg'); if (!msg) return; const name = nEl ? nEl.value.trim() : '', shop = sEl ? sEl.value : (SHOPS[0]||'Kiawara'), pin = pEl ? pEl.value.trim() : '', role = rEl ? rEl.value : 'cashier'; if (!name) { msg.textContent = '⚠️ Please enter a full name.'; msg.className = 'fail'; return; } if (!/^\d{4}$/.test(pin)) { msg.textContent = '⚠️ PIN must be exactly 4 digits.'; msg.className = 'fail'; return; } if (S.staff.find(s => s.pin === pin)) { msg.textContent = '⚠️ That PIN is already in use.'; msg.className = 'fail'; return; } msg.textContent = '⏳ Saving...'; msg.className = ''; const perms = role === 'admin' ? {...ADMINPERMS} : {...DEFPERMS}; try { const {error} = await db.from('staff').insert({name, shop, pin, role, perms}); if (error) throw new Error(error.message); const {data:f} = await db.from('staff').select('id,name,shop,pin,role,perms').eq('name', name).eq('pin', pin).limit(1); const fm = f && f[0] ? JSON.parse(JSON.stringify(f[0])) : null; S.staff.push(fm ? {id:fm.id, name:String(fm.name), shop:String(fm.shop), pin:String(fm.pin), role:String(fm.role), perms:{...fm.perms}} : {name, shop, pin, role, perms:{...perms}}); if (nEl) nEl.value = ''; if (pEl) pEl.value = ''; renderSettings(); const nm = $('staffmsg'); if (nm) { nm.textContent = '✅ ' + name + ' added!'; nm.className = 'succ'; } setupNav(); setTimeout(() => { const m = $('staffmsg'); if (m) m.textContent = ''; }, 4000); } catch(e) { msg.textContent = '❌ ' + e.message; msg.className = 'fail'; } }
 async function removeStaff(i) { const s = S.staff[i]; if (!s) return; const ok = await confirmModal.show('Remove Staff', 'Remove ' + s.name + '?', '🗑️ Remove', 'var(--red)', '👤'); if (!ok) return; try { if (s.id) { const {error} = await db.from('staff').eq('id', s.id).delete(); if (error) throw new Error(error.message); } else await db.from('staff').eq('name', s.name).delete(); S.staff.splice(i, 1); renderSettings(); pushNotif('🗑️ Staff removed', s.name + ' removed.'); } catch(e) { alert('Could not remove: ' + (e.message || 'Error')); } }
-async function changePin() { const cur = $('cur-pin').value, nw = $('new-pin').value, cf = $('conf-pin').value; const msg = $('pinmsg'), me = S.staff.find(s => s.name === sess.name); if (!me || cur !== me.pin) { msg.textContent = 'Current PIN incorrect.'; msg.className = 'fail'; return; } if (!/^\d{4}$/.test(nw)) { msg.textContent = 'Must be 4 digits.'; msg.className = 'fail'; return; } if (nw !== cf) { msg.textContent = 'PINs do not match.'; msg.className = 'fail'; return; } me.pin = nw; if (me.id) await db.from('staff').eq('id', me.id).update({pin:nw}); msg.textContent = 'PIN updated!'; msg.className = 'succ'; ['cur-pin','new-pin','conf-pin'].forEach(id => { const e = $(id); if (e) e.value = ''; }); }
+async function changePin() {
+  const cur = $('cur-pin').value, nw = $('new-pin').value, cf = $('conf-pin').value;
+  const msg = $('pinmsg');
+  if (!msg) return;
+  if (!/^\d{4}$/.test(nw)) { msg.textContent = 'Must be 4 digits.'; msg.className = 'fail'; return; }
+  if (nw !== cf) { msg.textContent = 'PINs do not match.'; msg.className = 'fail'; return; }
+  msg.textContent = 'Checking...'; msg.className = '';
+  try {
+    const {data, error} = await db.from('staff').select('id,pin').eq('name', sess.name);
+    if (error) throw new Error(error.message);
+    const me = data && data[0];
+    if (!me || cur !== me.pin) { msg.textContent = 'Current PIN incorrect.'; msg.className = 'fail'; return; }
+    const {error: upErr} = await db.from('staff').eq('id', me.id).update({pin: nw});
+    if (upErr) throw new Error(upErr.message);
+    const cached = S.staff.find(s => s.name === sess.name);
+    if (cached) cached.pin = nw;
+    msg.textContent = 'PIN updated!'; msg.className = 'succ';
+    ['cur-pin','new-pin','conf-pin'].forEach(id => { const e = $(id); if (e) e.value = ''; });
+  } catch(e) {
+    logError('changePin', e);
+    msg.textContent = 'Could not update PIN. Please try again.'; msg.className = 'fail';
+  }
+}
 
 async function saveCashThreshold(shop) {
   const inp = $(`threshold-${shop}`);

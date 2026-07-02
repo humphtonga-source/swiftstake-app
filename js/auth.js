@@ -11,16 +11,6 @@ async function bootApp() {
   }
 
   try {
-    setLoadMsg('Loading staff...');
-    try { 
-      const {data, error} = await wt(db.from('staff').select('*'), 5000); 
-      if (error) throw error;
-      if (data && data.length) S.staff = JSON.parse(JSON.stringify(data)); 
-    } catch(e) {
-      logError('bootApp: staff loading', e);
-      showWarning('Could not load staff data from server. Using offline defaults.');
-    }
-
     setLoadMsg('Loading shops...');
     try { 
       const {data, error} = await wt(db.from('shops').select('*').order('created_at'), 5000); 
@@ -121,7 +111,6 @@ async function bootApp() {
   } catch(e) {
     setLoadMsg('Offline mode');
   } finally {
-    if (!S.staff.length) S.staff = [{name:'Jane Kamau', shop:'All', pin:'1234', role:'admin', perms:{...ADMINPERMS}}];
     if (!SHOPS.length) SHOPS = ['Kiawara','Nyeri','Gachatha'];
     SHOPS.forEach(sh => {
       if (!S.shopData[sh]) S.shopData[sh] = {
@@ -201,20 +190,19 @@ async function doLogin() {
     if (resp.ok && data.staff && data.token) {
       m = data.staff;
       sessToken = data.token;
+    } else if (resp.status === 401) {
+      showErr('Name or PIN not recognised.'); clrPins(); return;
+    } else {
+      logError('doLogin - login service', new Error(data.error || 'Login service error'));
+      showErr('Could not reach the login service. Please check your connection and try again.');
+      clrPins(); return;
     }
   } catch(e) {
     logError('doLogin - login service', e);
+    showErr('Could not reach the login service. Please check your connection and try again.');
+    clrPins(); return;
   }
 
-  // Safe fallback: if the login service isn't configured yet (or is
-  // briefly unreachable), match against the already-loaded staff list
-  // exactly as before - login must never break during this rollout.
-  if (!m) {
-    m = S.staff.find(s => s.name.toLowerCase() === name.toLowerCase() && s.pin === pin && (s.shop === shop || s.shop === 'All'));
-    sessToken = null;
-  }
-
-  if (!m) { showErr('Name or PIN not recognised.'); clrPins(); return; }
   if (selRole_ === 'admin' && m.role !== 'admin') { showErr('You are not registered as an administrator.'); clrPins(); return; }
   if (selRole_ === 'cashier' && m.role === 'admin') { showErr('Administrators must sign in using the Admin option.'); clrPins(); return; }
   sess = {role:m.role, name:m.name, shop:m.shop === 'All' ? shop : m.shop, perms:{...m.perms}, isAdmin:m.role === 'admin'};
@@ -224,9 +212,18 @@ async function doLogin() {
   try {
     localStorage.setItem('swiftstake_session', JSON.stringify(sess));
     localStorage.setItem('swiftstake_activeShop', activeShop);
-    if (sessToken) localStorage.setItem('swiftstake_token', sessToken);
-    else localStorage.removeItem('swiftstake_token');
   } catch(e) {}
+  
+  // Admins need the full staff list for Settings > Staff & Permissions.
+  // Only fetched now, with a real admin JWT, so RLS actually allows it -
+  // no PIN data ever needs to reach a cashier's device.
+  if (sess.isAdmin) {
+    try {
+      const {data, error} = await db.from('staff').select('*');
+      if (error) throw error;
+      if (data) S.staff = JSON.parse(JSON.stringify(data));
+    } catch(e) { logError('doLogin - staff loading', e); }
+  }
   
   $('login').style.display = 'none';
   $('app').style.display = 'flex';
