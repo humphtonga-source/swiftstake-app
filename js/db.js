@@ -38,24 +38,27 @@ function dbReq(method, table, qs, body, extra) {
     Object.assign({}, authHeaders(), extra || {}), body);
 }
 
-function buildChain(table, filters, cols, orders, lim) {
+function buildChain(table, filters, cols, orders, lim, off) {
   const obj = {
-    select(c) { return buildChain(table, [...filters], c||'*', orders, lim); },
+    select(c) { return buildChain(table, [...filters], c||'*', orders, lim, off); },
     eq(col, val) {
       const nf = [...filters, col + '=eq.' + encodeURIComponent(String(val))];
-      const ch = buildChain(table, nf, cols, orders, lim);
+      const ch = buildChain(table, nf, cols, orders, lim, off);
       ch.update = body => dbReq('PATCH', table, nf.join('&'), body, {'Prefer':'return=representation'});
       ch.delete = () => dbReq('DELETE', table, nf.join('&'));
       return ch;
     },
-    order(col, opts) { return buildChain(table, [...filters], cols, [...orders, col + '.' + (opts && opts.ascending === false ? 'desc' : 'asc')], lim); },
-    limit(n) { return buildChain(table, [...filters], cols, orders, n); },
+    ilike(col, val) { return buildChain(table, [...filters, col + '=ilike.' + encodeURIComponent(String(val))], cols, orders, lim, off); },
+    order(col, opts) { return buildChain(table, [...filters], cols, [...orders, col + '.' + (opts && opts.ascending === false ? 'desc' : 'asc')], lim, off); },
+    limit(n) { return buildChain(table, [...filters], cols, orders, n, off); },
+    offset(n) { return buildChain(table, [...filters], cols, orders, lim, n); },
     update(body) { return dbReq('PATCH', table, filters.join('&'), body, {'Prefer':'return=representation'}); },
     delete() { return dbReq('DELETE', table, filters.join('&')); },
     then(res, rej) {
       const p = ['select=' + encodeURIComponent(cols||'*'), ...filters];
       if (orders.length) p.push('order=' + orders.join(','));
       if (lim) p.push('limit=' + lim);
+      if (off) p.push('offset=' + off);
       dbReq('GET', table, p.join('&')).then(res).catch(rej);
     }
   };
@@ -86,6 +89,9 @@ const db = {
         return dbReq('POST', table, qs, p.length === 1 ? p[0] : p, {'Prefer':'resolution=merge-duplicates,return=representation'});
       }
     };
+  },
+  async rpc(fnName, args) {
+    return dbReq('POST', 'rpc/' + fnName, '', args || {});
   },
   channel(n)        { return _rdb.channel(n); },
   removeChannel(ch) { try { _rdb.removeChannel(ch); } catch(e) {} }

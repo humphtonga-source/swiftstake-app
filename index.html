@@ -7,6 +7,9 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>SwiftStake Manager</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.3/dist/umd/supabase.min.js"></script>
 <link rel="stylesheet" href="css/styles.css">
 <link rel="manifest" href="/swiftstake-app/manifest.json">
@@ -79,6 +82,7 @@
         <div class="sitem" id="nav-turnover"  onclick="goTab('turnover',this)"  style="display:none;"><span class="sico">🎰</span> Game Turnover</div>
         <div class="sitem" id="nav-aisummary" onclick="goTab('aisummary',this)" style="display:none;"><span class="sico">🤖</span> AI Summary</div>
         <div class="sitem" id="nav-banking"   onclick="goTab('banking',this)"   style="display:none;"><span class="sico">🏦</span> Banking & Debts</div>
+        <div class="sitem" id="nav-auditlog"  onclick="goTab('auditlog',this)"  style="display:none;"><span class="sico">📜</span> Audit Log</div>
         <div class="sitem" id="nav-roadmap"   onclick="goTab('roadmap',this)"   style="display:none;"><span class="sico">🗺️</span> Roadmap</div>
         <div class="sitem" id="nav-settings"  onclick="goTab('settings',this)"  style="display:none;"><span class="sico">⚙️</span> Settings</div>
       </div>
@@ -93,6 +97,7 @@
       <div id="pane-turnover"  class="pane"></div>
       <div id="pane-aisummary" class="pane"></div>
       <div id="pane-banking"   class="pane"></div>
+      <div id="pane-auditlog"  class="pane"></div>
       <div id="pane-roadmap"   class="pane"></div>
       <div id="pane-settings"  class="pane"></div>
     </div>
@@ -174,6 +179,7 @@
 <script src="js/history.js"></script>
 <script src="js/planning.js"></script>
 <script src="js/settings.js"></script>
+<script src="js/auditlog.js"></script>
 <script src="js/chat.js"></script>
 <script src="js/realtime.js"></script>
 <script src="js/auth.js"></script>

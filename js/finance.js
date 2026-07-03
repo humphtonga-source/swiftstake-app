@@ -95,6 +95,7 @@ function renderFinance() {
   </div>
   ${shopTabsHTML}
   <div id="shop-display" style="font-size:12px;color:var(--txt3);margin-bottom:14px;"></div>
+  <div id="low-float-banner"></div>
 
   <div class="card" style="border-color:rgba(245,158,11,0.3);">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
@@ -562,6 +563,7 @@ function recalc() {
   set('s-rev', tR); set('s-exp', tExp);
   const sn = $('s-net'); if (sn) { sn.textContent = 'KES ' + fmt(net); sn.className = 'mcval ' + (net >= 0 ? 'pos' : 'neg'); }
   set('eod-ocash', ocash); set('eod-topup', tT); set('eod-rev', tR); set('eod-exp', tExp); set('eod-net', net);
+  checkLowFloat(activeShop, net);
   doRecon();
   const shopAtCall = activeShop; clearTimeout(recalc._t);
   recalc._t = setTimeout(() => {
@@ -1087,4 +1089,65 @@ function renderAiCoach() {
   }
   
   coachDiv.innerHTML = html;
+}
+
+// ── LOW FLOAT ALERT ──
+// Estimated live cash-on-hand for ANY shop, from its currently-synced
+// shopData - same formula already proven in end-of-day reconciliation.
+// Used both for the cashier's own live check and the admin's
+// all-shops view on the dashboard.
+function estimateShopCash(shop) {
+  const d = S.shopData[shop];
+  if (!d) return null;
+  let gameRev = 0;
+  GAMES.forEach(g => {
+    const gd = d.games[g] || {};
+    const nets = (gd.topups || []).reduce((s,t) => s + N(t.amount), 0);
+    gameRev += (N(gd.open) + nets) - N(gd.close);
+  });
+  const cashMov = d.cashMovements || [];
+  const cashAdded = cashMov.filter(m => m.amount > 0).reduce((s,m) => s + m.amount, 0);
+  const cashWithdrawn = Math.abs(cashMov.filter(m => m.amount < 0).reduce((s,m) => s + m.amount, 0));
+  const expenses = (d.expenses || []).reduce((s,e) => s + N(e.amount), 0);
+  return N(d.openingCash) + gameRev + cashAdded - cashWithdrawn - expenses;
+}
+
+function getLowFloatShops() {
+  return SHOPS.map(shop => {
+    const cash = estimateShopCash(shop);
+    const threshold = (S.cashThresholds && S.cashThresholds[shop]) || 5000;
+    return {shop, cash, threshold, isLow: cash !== null && cash < threshold};
+  }).filter(r => r.isLow);
+}
+
+// Live, real-time cash-on-hand estimate (same formula already used for
+// end-of-day reconciliation) compared against the shop's own threshold.
+// Fires once per breach - not on every keystroke - and clears itself
+// automatically the moment the shop's cash recovers above threshold.
+const _lowFloatAlerted = {};
+
+function checkLowFloat(shop, estimatedCash) {
+  const threshold = (S.cashThresholds && S.cashThresholds[shop]) || 5000;
+  const isLow = estimatedCash < threshold;
+  const banner = $('low-float-banner');
+
+  if (banner && shop === activeShop) {
+    banner.innerHTML = isLow ? `
+      <div class="card" style="background:var(--redl);border:1px solid rgba(239,68,68,0.35);margin-bottom:14px;">
+        <div style="display:flex;align-items:center;gap:12px;">
+          <span style="font-size:28px;">⚠️</span>
+          <div style="flex:1;">
+            <div style="font-weight:700;color:var(--red);font-size:14px;">Cash float running low</div>
+            <div style="font-size:12px;color:var(--txt2);margin-top:2px;">Estimated cash on hand: <b class="mono-fig">KES ${fmt(estimatedCash)}</b> · Minimum: <b class="mono-fig">KES ${fmt(threshold)}</b></div>
+          </div>
+        </div>
+      </div>` : '';
+  }
+
+  if (isLow && !_lowFloatAlerted[shop]) {
+    _lowFloatAlerted[shop] = true;
+    pushNotif('⚠️ Low float: ' + shop, 'Estimated cash KES ' + fmt(estimatedCash) + ' is below the KES ' + fmt(threshold) + ' minimum');
+  } else if (!isLow && _lowFloatAlerted[shop]) {
+    _lowFloatAlerted[shop] = false; // recovered - allow a fresh alert if it drops again
+  }
 }
