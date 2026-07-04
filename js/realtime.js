@@ -8,15 +8,29 @@ function subscribeToChat() {
       if (!channels[ch].find(x => x._dbid === m.id)) {
         channels[ch].push({
           _dbid: m.id, author: m.author, text: m.text, isAdmin: m.is_admin,
-          images: m.images || [],
+          images: m.images || [], replyToId: m.reply_to_id, reactions: m.reactions || {},
+          readBy: m.read_by || [], dmParticipants: m.dm_participants || null,
           time: new Date(m.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})
         });
+        if (ch === activeChannel) { renderFeed(); markChannelRead(ch); }
+        else if (m.author !== sess.name) {
+          const label = m.dm_participants ? m.author + ' (direct message)' : '#' + ch;
+          pushNotif('💬 ' + label, (m.author || '') + (m.text ? ' — ' + m.text.substring(0, 40) : ''));
+        }
+      }
+    })
+    .on('postgres_changes', {event:'UPDATE', schema:'public', table:'messages'}, payload => {
+      const m = payload.new, ch = m.channel;
+      const existing = (channels[ch] || []).find(x => x._dbid === m.id);
+      if (existing) {
+        existing.reactions = m.reactions || {};
+        existing.readBy = m.read_by || [];
         if (ch === activeChannel) renderFeed();
-        else pushNotif('💬 New message in #' + ch, (m.author || '') + (m.text ? ' — ' + m.text.substring(0, 40) : ''));
       }
     })
     .subscribe();
 }
+
 
 function subscribeToDataChanges() {
   if (realtimeDataSub) db.removeChannel(realtimeDataSub);

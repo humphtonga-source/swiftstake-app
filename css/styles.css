@@ -572,3 +572,103 @@ canvas{width:100%!important;max-height:200px;}
 .attn-icon { font-size: 20px; flex-shrink: 0; }
 .attn-text { flex: 1; font-size: 13px; font-weight: 600; }
 .attn-arrow { font-size: 12px; opacity: 0.6; }
+
+/* ── CHAT: DMs, reply, reactions, read receipts ── */
+.dm-picker {
+  display: none;
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  margin-bottom: 8px;
+  width: 240px;
+  max-height: 280px;
+  overflow-y: auto;
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius2);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  z-index: 20;
+}
+.dm-picker.on { display: block; }
+.dm-picker-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+}
+.dm-picker-item:last-child { border-bottom: none; }
+.dm-picker-item:hover { background: var(--surface3); }
+
+#reply-preview {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--bg2);
+  border-left: 3px solid var(--gold);
+  border-radius: 4px;
+  margin: 0 0 6px;
+}
+
+.reply-quote {
+  font-size: 12px;
+  color: var(--txt3);
+  background: rgba(255,255,255,0.04);
+  border-left: 3px solid var(--gold);
+  border-radius: 4px;
+  padding: 6px 10px;
+  margin-bottom: 4px;
+}
+
+.reaction-row { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px; }
+.reaction-pill {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  color: var(--txt2);
+  cursor: pointer;
+}
+.reaction-pill.mine { background: var(--goldl); border-color: rgba(245,158,11,0.4); color: var(--gold); font-weight: 700; }
+
+.seen-tick { font-size: 10px; color: var(--txt3); display: block; margin-top: 2px; }
+.seen-tick.seen { color: var(--blue); }
+
+.msg { position: relative; }
+.msg-actions {
+  position: absolute;
+  top: -4px;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  border-radius: 999px;
+  padding: 2px 4px;
+  opacity: 0.55;
+}
+.msg-actions > button {
+  background: none; border: none; cursor: pointer; font-size: 13px;
+  color: var(--txt3); padding: 3px 5px; border-radius: 50%;
+}
+.msg-actions > button:active,
+.msg-actions > button:hover { background: var(--surface3); color: var(--txt); }
+.quick-react-pop {
+  display: none;
+  position: absolute;
+  top: -38px;
+  right: 0;
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  border-radius: 999px;
+  padding: 4px 6px;
+  gap: 2px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+.msg-actions.react-open .quick-react-pop { display: flex; }
+.quick-react-pop button { background: none; border: none; cursor: pointer; font-size: 15px; padding: 2px 4px; }
+.quick-react-pop button:active { transform: scale(1.2); }

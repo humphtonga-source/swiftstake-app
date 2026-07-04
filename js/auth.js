@@ -69,6 +69,7 @@ async function bootApp() {
         $('app').style.flexDirection = 'column';
         $('userpill').textContent = sess.name.split(' ')[0] + ' · ' + (sess.isAdmin ? 'Admin' : sess.shop);
         await loadAuthenticatedData();
+        try { _rdb.realtime.setAuth(sessToken); } catch(e) {}
         setupNav(); initPlanning(); startNotifScheduler(); subscribeToChat(); subscribeToDataChanges(); startClock(); renderChatPane();
         goTab('dashboard', $('nav-dashboard'));
         return; // Skip showing login screen
@@ -261,6 +262,7 @@ async function doLogin() {
   $('app').style.display = 'flex';
   $('app').style.flexDirection = 'column';
   $('userpill').textContent = sess.name.split(' ')[0] + ' · ' + (sess.isAdmin ? 'Admin' : sess.shop);
+  try { _rdb.realtime.setAuth(sessToken); } catch(e) {}
   setupNav(); initPlanning(); startNotifScheduler(); subscribeToChat(); subscribeToDataChanges(); startClock(); renderChatPane();
   goTab('dashboard', $('nav-dashboard'));
 }
