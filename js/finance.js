@@ -187,7 +187,7 @@ function renderFinance() {
   </div>` : ''}
 
   ${!sess.isAdmin ? `<div class="card" style="background:var(--greenl);border:1px solid rgba(34,197,94,0.2);border-radius:var(--radius2);padding:16px;margin-bottom:14px;">
-    <div style="font-size:12px;font-weight:700;color:var(--green);text-transform:uppercase;margin-bottom:12px;">📍 Tomorrow's Opening Float</div>
+    <div style="font-size:12px;font-weight:700;color:var(--green);text-transform:uppercase;margin-bottom:12px;">📍 Today's Opening Float</div>
     <div id="next-opening-floats" style="display:grid;gap:8px;"></div>
   </div>` : ''}
 
@@ -399,15 +399,18 @@ function loadShopData(shop) {
       if (rr) rr.innerHTML = '';
     }
     
-    // Show tomorrow's opening float preview for cashiers (live preview of current closing floats)
+    // Show opening float for today's games. Reading 'open' (not 'close')
+    // matters: submitReport() moves the carried-over value into 'open'
+    // and resets 'close' to 0 for the new day - reading 'close' here
+    // would show zeros immediately after every submission.
     if (!sess.isAdmin) {
       const nof = $('next-opening-floats');
       if (nof) {
         nof.innerHTML = GAMES.map(g => {
-          const closing = N(d.games[g] && d.games[g].close) || 0;
+          const opening = N(d.games[g] && d.games[g].open) || 0;
           return `<div style="display:flex;align-items:center;justify-content:space-between;padding:10px;background:rgba(255,255,255,0.05);border-radius:var(--radius2);border-left:3px solid var(--green);">
             <span style="font-size:13px;font-weight:600;color:var(--txt);">${g.toUpperCase()}</span>
-            <span style="font-size:14px;font-weight:700;color:var(--green);">KES ${fmt(closing)}</span>
+            <span style="font-size:14px;font-weight:700;color:var(--green);">KES ${fmt(opening)}</span>
           </div>`;
         }).join('');
       }
