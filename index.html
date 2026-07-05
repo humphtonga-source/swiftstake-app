@@ -186,7 +186,20 @@
 <script src="js/notifications.js"></script>
 <script>bootApp();</script>
 <script>
-if("serviceWorker"in navigator)navigator.serviceWorker.register("/swiftstake-app/sw.js");
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("/swiftstake-app/sw.js").then(reg => {
+    reg.update();
+    // If a new service worker takes over while this page is open,
+    // reload once automatically so the newest code is guaranteed to
+    // run - this is the mechanism that was missing before.
+    let reloaded = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (reloaded) return;
+      reloaded = true;
+      window.location.reload();
+    });
+  }).catch(err => console.error('Service worker registration failed:', err));
+}
 </script>
 </body>
 </html>

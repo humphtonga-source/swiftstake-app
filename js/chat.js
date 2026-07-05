@@ -3,8 +3,9 @@ const EMOJIS = {smileys:['😀','😂','🤣','😅','😊','😍','🥰','😎'
 const STICKERS = [{e:'😂',l:'LOL'},{e:'🔥',l:'Fire!'},{e:'💰',l:'Money!'},{e:'👑',l:'Boss'},{e:'🏆',l:'Winner'},{e:'🤑',l:'Paid!'},{e:'💪',l:"Let's go"},{e:'🎯',l:'On target'},{e:'🚀',l:'Rocket'},{e:'🥳',l:'Party!'}];
 const QUICK_REACTIONS = ['👍','❤️','😂','😮','😢','🙏'];
 let activeChannel = 'general';
-let activeDmWith = null; // other person's name when in a DM, else null
-let replyingTo = null; // {id, author, text}
+let activeDmWith = null;
+let replyingTo = null;
+let openActionsFor = null; // _dbid of the message currently showing its action row
 const channels = {general:[], announcements:[], kiawara:[], nyeri:[], gachatha:[], ai:[]};
 let channelsLoaded = {};
 let staffDirectory = null;
@@ -28,47 +29,54 @@ async function loadChannelHistory(ch) {
   if (data) channels[ch] = JSON.parse(JSON.stringify(data)).map(m => ({
     _dbid: m.id, author: m.author, text: m.text, isAdmin: m.is_admin, images: m.images || [],
     replyToId: m.reply_to_id, reactions: m.reactions || {}, readBy: m.read_by || [],
-    dmParticipants: m.dm_participants || null,
+    dmParticipants: m.dm_participants || null, deletedAt: m.deleted_at || null,
     time: new Date(m.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})
   }));
 }
 
 function buildEGrid(cat) { const el = $('emojigrid'); if (!el) return; el.innerHTML = (EMOJIS[cat]||[]).map(e => `<button class="emojibtn" onclick="insertEmoji('${e}')">${e}</button>`).join(''); }
 function showEcat(btn, cat) { document.querySelectorAll('.emojipanel button[onclick^="showEcat"]').forEach(b => b.style.opacity = '.5'); btn.style.opacity = '1'; buildEGrid(cat); }
-function toggleEmoji(e) { e.stopPropagation(); const sp = $('stickerpanel'); if (sp) sp.classList.remove('on'); const dp = $('dm-picker'); if (dp) dp.classList.remove('on'); const ep = $('emojipanel'); if (ep) ep.classList.toggle('on'); }
-function toggleSticker(e) { e.stopPropagation(); const ep = $('emojipanel'); if (ep) ep.classList.remove('on'); const dp = $('dm-picker'); if (dp) dp.classList.remove('on'); const sp = $('stickerpanel'); if (sp) sp.classList.toggle('on'); }
 function insertEmoji(em) { const inp = $('msginp'); if (!inp) return; const s = inp.selectionStart; inp.value = inp.value.substring(0, s) + em + inp.value.substring(inp.selectionEnd); inp.selectionStart = inp.selectionEnd = s + em.length; inp.focus(); }
 function buildSGrid() { const el = $('stkgrid'); if (!el) return; el.innerHTML = STICKERS.map((s,i) => `<div class="stkitem" onclick="sendSticker(${i})"><span class="se">${s.e}</span><span>${s.l}</span></div>`).join(''); }
-async function sendSticker(i) { const sp = $('stickerpanel'); if (sp) sp.classList.remove('on'); const s = STICKERS[i]; await sendMsg(s.e + ' ' + s.l); }
-document.addEventListener('click', () => { const ep = $('emojipanel'); if (ep) ep.classList.remove('on'); const sp = $('stickerpanel'); if (sp) sp.classList.remove('on'); const dp = $('dm-picker'); if (dp) dp.classList.remove('on'); });
-function handlePhotos(inp) { Array.from(inp.files).forEach(f => { const r = new FileReader(); r.onload = ev => { pendImgs.push({url:ev.target.result}); renderImgStrip(); }; r.readAsDataURL(f); }); inp.value = ''; }
+async function sendSticker(i) { closeAttachPanels(); const s = STICKERS[i]; await sendMsg(s.e + ' ' + s.l); }
+
+function closeAttachPanels() {
+  const ep = $('emojipanel'); if (ep) ep.classList.remove('on');
+  const sp = $('stickerpanel'); if (sp) sp.classList.remove('on');
+  const ap = $('attach-menu'); if (ap) ap.classList.remove('on');
+  const dp = $('dm-picker'); if (dp) dp.classList.remove('on');
+}
+function toggleAttachMenu(e) { e.stopPropagation(); const wasOn = $('attach-menu') && $('attach-menu').classList.contains('on'); closeAttachPanels(); if (!wasOn) { const ap = $('attach-menu'); if (ap) ap.classList.add('on'); } }
+function toggleEmoji(e) { e.stopPropagation(); const wasOn = $('emojipanel') && $('emojipanel').classList.contains('on'); closeAttachPanels(); if (!wasOn) { const ep = $('emojipanel'); if (ep) ep.classList.add('on'); } }
+function toggleSticker(e) { e.stopPropagation(); const wasOn = $('stickerpanel') && $('stickerpanel').classList.contains('on'); closeAttachPanels(); if (!wasOn) { const sp = $('stickerpanel'); if (sp) sp.classList.add('on'); } }
+document.addEventListener('click', () => { closeAttachPanels(); if (openActionsFor) { openActionsFor = null; renderFeed(); } });
+
+function handlePhotos(inp) { closeAttachPanels(); Array.from(inp.files).forEach(f => { const r = new FileReader(); r.onload = ev => { pendImgs.push({url:ev.target.result}); renderImgStrip(); }; r.readAsDataURL(f); }); inp.value = ''; }
 function renderImgStrip() { const el = $('imgstrip'); if (!el) return; if (!pendImgs.length) { el.style.display = 'none'; el.innerHTML = ''; return; } el.style.display = 'flex'; el.innerHTML = pendImgs.map((img,i) => `<div class="imgthumb"><img src="${img.url}"><button class="imgdel" onclick="removePendImg(${i})">✕</button></div>`).join(''); }
 function removePendImg(i) { pendImgs.splice(i, 1); renderImgStrip(); }
 
 async function toggleDmPicker(e) {
   e.stopPropagation();
-  const ep = $('emojipanel'); if (ep) ep.classList.remove('on');
-  const sp = $('stickerpanel'); if (sp) sp.classList.remove('on');
+  const wasOn = $('dm-picker') && $('dm-picker').classList.contains('on');
+  closeAttachPanels();
+  if (wasOn) return;
   const dp = $('dm-picker'); if (!dp) return;
-  const opening = !dp.classList.contains('on');
-  dp.classList.toggle('on');
-  if (opening) {
-    dp.innerHTML = '<div style="padding:10px;font-size:12px;color:var(--txt3);">Loading...</div>';
-    const list = await loadStaffDirectory();
-    dp.innerHTML = list.length ? list.map(s => `<div class="dm-picker-item" onclick="openDm('${s.name.replace(/'/g,"\\'")}')">
-      <div class="av av-p" style="width:26px;height:26px;font-size:11px;">${s.name.split(' ').map(w=>w[0]).join('').substring(0,2).toUpperCase()}</div>
-      <div><div style="font-size:13px;font-weight:600;color:var(--txt);">${s.name}</div><div style="font-size:11px;color:var(--txt3);">${s.shop}</div></div>
-    </div>`).join('') : '<div style="padding:10px;font-size:12px;color:var(--txt3);">No one else to message yet.</div>';
-  }
+  dp.classList.add('on');
+  dp.innerHTML = '<div style="padding:10px;font-size:12px;color:var(--txt3);">Loading...</div>';
+  const list = await loadStaffDirectory();
+  dp.innerHTML = list.length ? list.map(s => `<div class="dm-picker-item" onclick="openDm('${s.name.replace(/'/g,"\\'")}')">
+    <div class="av av-p" style="width:26px;height:26px;font-size:11px;">${s.name.split(' ').map(w=>w[0]).join('').substring(0,2).toUpperCase()}</div>
+    <div><div style="font-size:13px;font-weight:600;color:var(--txt);">${s.name}</div><div style="font-size:11px;color:var(--txt3);">${s.shop}</div></div>
+  </div>`).join('') : '<div style="padding:10px;font-size:12px;color:var(--txt3);">No one else to message yet.</div>';
 }
 
 async function openDm(otherName) {
-  const dp = $('dm-picker'); if (dp) dp.classList.remove('on');
+  closeAttachPanels();
   document.querySelectorAll('.chi').forEach(c => c.classList.remove('act'));
   const dmTab = $('dm-tab'); if (dmTab) dmTab.classList.add('act');
   activeDmWith = otherName;
   activeChannel = dmChannelKey(sess.name, otherName);
-  cancelReply();
+  cancelReply(); openActionsFor = null;
   const cn = $('ch-name'); if (cn) cn.textContent = otherName;
   const cd = $('ch-desc'); if (cd) cd.textContent = '— Direct message';
   const mi = $('msginp'); if (mi) mi.placeholder = 'Message ' + otherName + '...';
@@ -82,8 +90,8 @@ function renderChatPane() {
   const p = $('pane-chat'); if (!p) return;
   const aiCh = sess.isAdmin ? `<div class="chi" id="ai-ch" onclick="switchCh(this,'ai','AI Assistant')">🤖 AI</div>` : '';
   const aiFoot = sess.isAdmin ? '<label class="aitogglelbl"><input type="checkbox" id="ai-mode" style="accent-color:var(--gold);"> Ask AI</label>' : '';
-  const pushBtnHtml = (typeof Notification !== 'undefined' && Notification.permission !== 'granted') ? `<div id="push-prompt" class="ibar" style="cursor:pointer;display:flex;align-items:center;gap:8px;" onclick="enablePushClick()">
-      <span>🔔</span><span style="flex:1;">Turn on notifications so you don't miss messages when the app is closed</span><span style="font-weight:700;color:var(--gold);">Enable →</span>
+  const pushBtnHtml = (typeof Notification !== 'undefined' && Notification.permission !== 'granted') ? `<div id="push-prompt" onclick="enablePushClick()">
+      <span>🔔</span><span>Turn on notifications</span><span class="pp-link">Enable →</span>
     </div>` : '';
   p.innerHTML = `<div class="ph"><div class="ph-icon">💬</div><h2>Team Chat</h2></div>
     ${pushBtnHtml}
@@ -102,16 +110,19 @@ function renderChatPane() {
           <div id="reply-preview" style="display:none;"></div>
           <div class="imgstrip" id="imgstrip" style="display:none;"></div>
           <div class="cbox">
-            <textarea class="cta" id="msginp" rows="2" placeholder="Message #general..."></textarea>
-            <div class="cfooter">
+            <div class="cinput-row">
+              <button class="toolfbtn" onclick="toggleAttachMenu(event)">➕</button>
+              <textarea class="cta" id="msginp" rows="1" placeholder="Message #general..."></textarea>
               <button class="toolfbtn" onclick="toggleEmoji(event)">😀</button>
-              <button class="toolfbtn" onclick="toggleSticker(event)">🎭</button>
-              <button class="toolfbtn" onclick="$('photo-input').click()">📷</button>
-              ${aiFoot}
-              <button class="sendbtn" onclick="sendMsg()">Send ↑</button>
+              <button class="sendbtn-round" onclick="sendMsg()">↑</button>
             </div>
+            ${aiFoot}
           </div>
           <div class="comprel">
+            <div class="attach-menu" id="attach-menu">
+              <button onclick="$('photo-input').click()"><span>📷</span> Photo</button>
+              <button onclick="toggleSticker(event)"><span>🎭</span> Sticker</button>
+            </div>
             <div class="emojipanel" id="emojipanel">
               <div style="display:flex;gap:3px;margin-bottom:6px;">
                 <button class="emojibtn" onclick="showEcat(this,'smileys')" style="font-size:13px;opacity:.5;">😀</button>
@@ -122,7 +133,7 @@ function renderChatPane() {
               <div class="emojigrid" id="emojigrid"></div>
             </div>
             <div class="stickerpanel" id="stickerpanel">
-              <div style="font-size:10px;font-weight:700;color:var(--txt3);margin-bottom:6px;text-transform:uppercase;">Quick Reactions</div>
+              <div style="font-size:10px;font-weight:700;color:var(--txt3);margin-bottom:6px;text-transform:uppercase;">Quick Stickers</div>
               <div class="stkgrid" id="stkgrid"></div>
             </div>
             <div class="dm-picker" id="dm-picker" onclick="event.stopPropagation()"></div>
@@ -137,7 +148,7 @@ function renderChatPane() {
 
 async function enablePushClick() {
   const btn = $('push-prompt');
-  if (btn) btn.textContent = 'Enabling...';
+  if (btn) btn.innerHTML = '<span>🔔</span><span>Enabling...</span>';
   const ok = await enablePushNotifications();
   if (ok) { const el = $('push-prompt'); if (el) el.remove(); }
   else renderChatPane();
@@ -145,7 +156,7 @@ async function enablePushClick() {
 
 async function switchCh(el, ch, desc) {
   document.querySelectorAll('.chi').forEach(c => c.classList.remove('act')); el.classList.add('act');
-  activeChannel = ch; activeDmWith = null; cancelReply();
+  activeChannel = ch; activeDmWith = null; cancelReply(); openActionsFor = null;
   const cn = $('ch-name'); if (cn) cn.textContent = ch === 'ai' ? 'AI Assistant' : ch;
   const cd = $('ch-desc'); if (cd) cd.textContent = '— ' + desc;
   const mi = $('msginp'); if (mi) mi.placeholder = ch === 'ai' ? 'Ask SwiftStake AI...' : 'Message #' + ch + '...';
@@ -155,6 +166,7 @@ async function switchCh(el, ch, desc) {
 
 function startReply(dbid, author, text) {
   replyingTo = {id: dbid, author, text: (text||'').substring(0, 80)};
+  openActionsFor = null; renderFeed();
   const rp = $('reply-preview'); if (!rp) return;
   rp.style.display = 'flex';
   rp.innerHTML = `<div style="flex:1;overflow:hidden;"><div style="font-size:11px;font-weight:700;color:var(--gold);">Replying to ${author}</div><div style="font-size:12px;color:var(--txt3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(text||'')}</div></div><button onclick="cancelReply()" style="background:none;border:none;color:var(--txt3);font-size:16px;cursor:pointer;padding:0 6px;">✕</button>`;
@@ -162,7 +174,14 @@ function startReply(dbid, author, text) {
 }
 function cancelReply() { replyingTo = null; const rp = $('reply-preview'); if (rp) { rp.style.display = 'none'; rp.innerHTML = ''; } }
 
-async function toggleReaction(dbid, emoji) {
+function toggleMsgActions(dbid, e) {
+  if (e) e.stopPropagation();
+  openActionsFor = (openActionsFor === dbid) ? null : dbid;
+  renderFeed();
+}
+
+async function toggleReaction(dbid, emoji, e) {
+  if (e) e.stopPropagation();
   const msgs = channels[activeChannel] || [];
   const m = msgs.find(x => x._dbid === dbid);
   if (!m || !dbid) return;
@@ -172,8 +191,21 @@ async function toggleReaction(dbid, emoji) {
   if (idx >= 0) list.splice(idx, 1); else list.push(sess.name);
   if (list.length) reactions[emoji] = list; else delete reactions[emoji];
   m.reactions = reactions;
+  openActionsFor = null;
   renderFeed();
-  try { await db.from('messages').eq('id', dbid).update({reactions}); } catch(e) { logError('toggleReaction', e); }
+  try { await db.from('messages').eq('id', dbid).update({reactions}); } catch(err) { logError('toggleReaction', err); }
+}
+
+async function deleteMsg(dbid, e) {
+  if (e) e.stopPropagation();
+  if (!confirm('Delete this message?')) return;
+  const msgs = channels[activeChannel] || [];
+  const m = msgs.find(x => x._dbid === dbid);
+  if (!m) return;
+  m.deletedAt = new Date().toISOString(); m.text = null; m.images = []; m.reactions = {};
+  openActionsFor = null;
+  renderFeed();
+  try { await db.from('messages').eq('id', dbid).update({deleted_at: m.deletedAt}); } catch(err) { logError('deleteMsg', err); }
 }
 
 async function markChannelRead(ch) {
@@ -186,57 +218,76 @@ async function markChannelRead(ch) {
 }
 
 function escapeHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+function initials(name) { return name.split(' ').map(w => w[0]).join('').substring(0, 2).toUpperCase(); }
 
 function renderFeed() {
   const feed = $('mfeed'); if (!feed) return; const msgs = channels[activeChannel] || [];
   if (!msgs.length) {
-    if (activeChannel === 'general') feed.innerHTML = `<div class="msg"><div class="av av-b">JK</div><div><div class="mmeta"><span class="mauth">Jane K. (Admin)</span><span class="mtime">Now</span></div><div class="annbl"><div class="annbl-t">Welcome to SwiftStake! 👋</div><div class="annbl-b">Count floats before opening. EOD reports due by 9 PM.</div></div></div></div>`;
-    else if (activeChannel === 'ai') feed.innerHTML = `<div class="msg"><div class="av av-ai">AI</div><div><div class="mmeta"><span class="mauth">SwiftStake AI</span><span class="mtime">Now</span></div><div class="aibubble"><div class="mtxt">Hello! I'm your SwiftStake assistant. Ask me about performance, debts, or what to focus on today.</div></div></div></div>`;
+    if (activeChannel === 'general') feed.innerHTML = `<div class="daymark">Today</div><div class="msgrow other"><div class="av av-b">JK</div><div class="bubble-col"><div class="bubble other"><div class="bname">Jane K. (Admin)</div>Welcome to SwiftStake! 👋 Count floats before opening. EOD reports due by 9 PM.</div></div></div>`;
+    else if (activeChannel === 'ai') feed.innerHTML = `<div class="msgrow other"><div class="av av-ai">AI</div><div class="bubble-col"><div class="bubble other">Hello! I'm your SwiftStake assistant. Ask me about performance, debts, or what to focus on today.</div></div></div>`;
     else if (activeDmWith) feed.innerHTML = `<div style="text-align:center;padding:30px 20px;font-size:13px;color:var(--txt3);">No messages yet. Say hello to ${activeDmWith}!</div>`;
     else feed.innerHTML = `<div style="text-align:center;padding:30px 20px;font-size:13px;color:var(--txt3);">No messages yet.</div>`;
     return;
   }
   feed.innerHTML = '';
-  msgs.forEach(m => {
-    const div = document.createElement('div'); div.className = 'msg';
-    const isAI = m.author === 'SwiftStake AI'; const isMine = m.author === sess.name;
-    const avc = isAI ? 'av-ai' : m.isAdmin ? 'av-b' : 'av-p';
-    const init = isAI ? 'AI' : m.author.split(' ').map(w => w[0]).join('').substring(0, 2).toUpperCase();
-    let inner = '';
+  msgs.forEach((m, i) => {
+    const isAI = m.author === 'SwiftStake AI'; const isMine = m.author === sess.name && !isAI;
+    const prev = msgs[i-1];
+    const grouped = prev && prev.author === m.author && !prev.deletedAt === !m.deletedAt && (i - msgs.indexOf(prev) === 1);
+    const showHeader = !grouped;
 
-    if (m.replyToId) {
-      const orig = msgs.find(x => x._dbid === m.replyToId);
-      if (orig) inner += `<div class="reply-quote"><span style="font-weight:700;color:var(--gold);">${orig.author}</span> ${escapeHtml((orig.text||'').substring(0,60))}</div>`;
+    const row = document.createElement('div');
+    row.className = 'msgrow ' + (isAI ? 'other ai-row' : isMine ? 'mine' : 'other') + (grouped ? ' grouped' : '');
+
+    let avatarHtml = '';
+    if (!isMine) {
+      avatarHtml = showHeader
+        ? `<div class="av ${isAI ? 'av-ai' : m.isAdmin ? 'av-b' : 'av-p'}">${isAI ? 'AI' : initials(m.author)}</div>`
+        : `<div class="av-spacer"></div>`;
     }
-    if (m.images && m.images.length) inner += m.images.map(src => `<img class="msgimg" src="${src}" onclick="openLightbox('${src}')">`).join('');
-    if (m.text) inner += isAI ? `<div class="aibubble"><div class="mtxt">${m.text}</div></div>` : `<div class="mtxt">${escapeHtml(m.text)}</div>`;
 
-    const reactionKeys = Object.keys(m.reactions || {});
+    let bubbleInner = '';
+    if (showHeader && !isMine) bubbleInner += `<div class="bname">${m.author}</div>`;
+
+    if (m.deletedAt) {
+      bubbleInner += `<div class="deleted-msg">🚫 This message was deleted</div>`;
+    } else {
+      if (m.replyToId) {
+        const orig = msgs.find(x => x._dbid === m.replyToId);
+        if (orig) bubbleInner += `<div class="reply-quote">${orig.author}: ${escapeHtml((orig.text||'').substring(0,60))}</div>`;
+      }
+      if (m.images && m.images.length) bubbleInner += m.images.map(src => `<img class="msgimg" src="${src}" onclick="openLightbox('${src}')">`).join('');
+      if (m.text) bubbleInner += isAI ? `<div class="ai-text">${m.text}</div>` : escapeHtml(m.text);
+    }
+
+    const reactionKeys = m.deletedAt ? [] : Object.keys(m.reactions || {});
     const reactionsHtml = reactionKeys.length ? `<div class="reaction-row">${reactionKeys.map(em => {
       const mine = (m.reactions[em]||[]).includes(sess.name);
-      return `<button class="reaction-pill ${mine?'mine':''}" onclick="toggleReaction('${m._dbid}','${em}')">${em} ${m.reactions[em].length}</button>`;
+      return `<button class="reaction-pill ${mine?'mine':''}" onclick="toggleReaction('${m._dbid}','${em}',event)">${em} ${m.reactions[em].length}</button>`;
     }).join('')}</div>` : '';
 
-    const msgActionsHtml = !isAI && m._dbid ? `<div class="msg-actions">
-      <button onclick="startReply('${m._dbid}','${m.author.replace(/'/g,"\\'")}',${JSON.stringify(m.text||'').replace(/"/g,'&quot;')})" title="Reply">↩</button>
-      <button onclick="this.parentElement.classList.toggle('react-open')" title="React">😊</button>
-      <div class="quick-react-pop">${QUICK_REACTIONS.map(em => `<button onclick="toggleReaction('${m._dbid}','${em}');this.closest('.msg-actions').classList.remove('react-open')">${em}</button>`).join('')}</div>
-    </div>` : '';
-
-    const seenHtml = isMine && m._dbid ? (() => {
+    const timeHtml = `<span class="btime">${m.time}</span>`;
+    const seenHtml = isMine && m._dbid && !m.deletedAt ? (() => {
       const others = (m.readBy||[]).filter(n => n !== sess.name);
-      if (!others.length) return '<span class="seen-tick">✓ Sent</span>';
-      return `<span class="seen-tick seen">✓✓ Seen${activeDmWith ? '' : ' by ' + others.length}</span>`;
+      return others.length ? '<span class="seen-tick seen">✓✓</span>' : '<span class="seen-tick">✓</span>';
     })() : '';
 
-    div.innerHTML = `<div class="av ${avc}">${init}</div><div style="flex:1;min-width:0;">
-      <div class="mmeta"><span class="mauth">${m.author}</span><span class="mtime">${m.time}</span></div>
-      ${inner}
+    const canDelete = !isAI && !m.deletedAt && m._dbid && (isMine || sess.isAdmin);
+    const showActions = openActionsFor === m._dbid;
+    const actionsHtml = (!isAI && !m.deletedAt && m._dbid && showActions) ? `<div class="msg-actions ${isMine ? 'mine' : ''}">
+      <button onclick="startReply('${m._dbid}','${m.author.replace(/'/g,"\\'")}',${JSON.stringify(m.text||'').replace(/"/g,'&quot;')})">↩ Reply</button>
+      ${QUICK_REACTIONS.map(em => `<button onclick="toggleReaction('${m._dbid}','${em}',event)">${em}</button>`).join('')}
+      ${canDelete ? `<button onclick="deleteMsg('${m._dbid}',event)" class="del">🗑</button>` : ''}
+    </div>` : '';
+
+    const bubbleClass = 'bubble ' + (isAI ? 'ai' : isMine ? 'mine' : 'other') + (m.deletedAt ? ' deleted' : '');
+    row.innerHTML = `${avatarHtml}<div class="bubble-col">
+      <div class="${bubbleClass}" onclick="${!isAI && !m.deletedAt && m._dbid ? `toggleMsgActions('${m._dbid}',event)` : ''}">${bubbleInner}</div>
+      <div class="bmeta">${timeHtml}${seenHtml}</div>
       ${reactionsHtml}
-      ${seenHtml}
-      ${msgActionsHtml}
+      ${actionsHtml}
     </div>`;
-    feed.appendChild(div);
+    feed.appendChild(row);
   });
   feed.scrollTop = feed.scrollHeight;
 }
@@ -252,7 +303,7 @@ async function sendMsg(forcedText) {
   const dmParticipants = activeDmWith ? [sess.name, activeDmWith].sort() : null;
   const replySnapshot = replyingTo;
 
-  const localMsg = {author:sess.name, text:txt, time, isAdmin:sess.isAdmin, images:imgUrls, replyToId: replySnapshot ? replySnapshot.id : null, reactions:{}, readBy:[], dmParticipants};
+  const localMsg = {author:sess.name, text:txt, time, isAdmin:sess.isAdmin, images:imgUrls, replyToId: replySnapshot ? replySnapshot.id : null, reactions:{}, readBy:[], dmParticipants, deletedAt:null};
   if (!channels[ch]) channels[ch] = [];
   channels[ch].push(localMsg); pendImgs = []; renderImgStrip(); if (inp) inp.value = ''; cancelReply(); renderFeed();
 
@@ -294,12 +345,12 @@ async function callAI(q, ch) {
   try {
     const reply = await askAI(q, {system: ctx, max_tokens: 1000});
     try { feed.removeChild(typing); } catch(e) {}
-    channels[ch].push({author:'SwiftStake AI', text:reply || 'Sorry, try again.', time:new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}), isAdmin:false, images:[], reactions:{}, readBy:[]});
+    channels[ch].push({author:'SwiftStake AI', text:reply || 'Sorry, try again.', time:new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}), isAdmin:false, images:[], reactions:{}, readBy:[], deletedAt:null});
     renderFeed(); await db.from('messages').insert({channel:ch, author:'SwiftStake AI', text:reply, is_admin:false, images:[]});
   } catch(e) {
     logError('callAI', e);
     try { feed.removeChild(typing); } catch(err) {}
-    channels[ch].push({author:'SwiftStake AI', text:'⚠️ ' + (e.message || 'Connection error. Try again.'), time:new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}), isAdmin:false, images:[], reactions:{}, readBy:[]});
+    channels[ch].push({author:'SwiftStake AI', text:'⚠️ ' + (e.message || 'Connection error. Try again.'), time:new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}), isAdmin:false, images:[], reactions:{}, readBy:[], deletedAt:null});
     renderFeed();
   }
 }

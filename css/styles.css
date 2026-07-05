@@ -672,3 +672,125 @@ canvas{width:100%!important;max-height:200px;}
 .msg-actions.react-open .quick-react-pop { display: flex; }
 .quick-react-pop button { background: none; border: none; cursor: pointer; font-size: 15px; padding: 2px 4px; }
 .quick-react-pop button:active { transform: scale(1.2); }
+
+/* ── CHAT REDESIGN: real bubbles, grouped messages, minimal chrome ── */
+.mfeed { gap: 2px !important; }
+.daymark { text-align: center; font-size: 11px; color: var(--txt3); margin: 10px 0 6px; text-transform: uppercase; letter-spacing: 0.05em; }
+
+.msgrow { display: flex; gap: 8px; margin-top: 10px; max-width: 100%; }
+.msgrow.grouped { margin-top: 2px; }
+.msgrow.mine { flex-direction: row-reverse; }
+.msgrow .av-spacer { width: 28px; flex-shrink: 0; }
+
+.bubble-col { display: flex; flex-direction: column; max-width: 78%; min-width: 0; }
+.msgrow.mine .bubble-col { align-items: flex-end; }
+.msgrow.other .bubble-col { align-items: flex-start; }
+
+.bubble {
+  padding: 8px 12px;
+  border-radius: 15px;
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--txt);
+  word-wrap: break-word;
+  cursor: pointer;
+}
+.bubble.mine { background: var(--goldl); border: 1px solid rgba(245,158,11,0.3); border-bottom-right-radius: 4px; }
+.bubble.other { background: var(--surface2); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
+.bubble.ai { background: var(--bluel); border: 1px solid rgba(59,130,246,0.3); border-bottom-left-radius: 4px; cursor: default; }
+.bubble.deleted { background: transparent; border: 1px dashed var(--border2); cursor: default; }
+.bname { font-size: 11px; font-weight: 700; color: var(--gold); margin-bottom: 3px; }
+.deleted-msg { font-size: 12px; color: var(--txt3); font-style: italic; }
+.ai-text { white-space: pre-wrap; }
+
+.bmeta { display: flex; align-items: center; gap: 4px; padding: 2px 4px 0; }
+.btime { font-size: 10px; color: var(--txt3); }
+.seen-tick { font-size: 10px; color: var(--txt3); }
+.seen-tick.seen { color: var(--blue); }
+
+.reply-quote {
+  font-size: 11px;
+  color: var(--txt3);
+  background: rgba(0,0,0,0.15);
+  border-left: 2px solid var(--gold);
+  border-radius: 3px;
+  padding: 4px 8px;
+  margin-bottom: 4px;
+}
+
+.reaction-row { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 2px; padding: 0 4px; }
+.reaction-pill {
+  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  color: var(--txt2);
+  cursor: pointer;
+}
+.reaction-pill.mine { background: var(--goldl); border-color: rgba(245,158,11,0.4); color: var(--gold); font-weight: 700; }
+
+/* Tap-to-reveal action row - replaces always-visible clutter */
+.msg-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  border-radius: 999px;
+  padding: 3px 4px;
+  margin-top: 4px;
+  flex-wrap: wrap;
+  max-width: 260px;
+}
+.msg-actions.mine { justify-content: flex-end; }
+.msg-actions button {
+  background: none; border: none; cursor: pointer; font-size: 14px;
+  color: var(--txt2); padding: 3px 7px; border-radius: 999px; white-space: nowrap;
+}
+.msg-actions button:active { background: var(--surface3); }
+.msg-actions button.del { color: var(--red); font-size: 13px; }
+
+#push-prompt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: var(--goldl);
+  border: 1px solid rgba(245,158,11,0.3);
+  border-radius: var(--radius2);
+  margin-bottom: 12px;
+  font-size: 12px;
+  color: var(--txt2);
+  cursor: pointer;
+}
+#push-prompt .pp-link { margin-left: auto; font-weight: 700; color: var(--gold); white-space: nowrap; }
+
+/* Composer - consolidated single row */
+.cinput-row { display: flex; align-items: flex-end; gap: 6px; }
+.cinput-row .cta { flex: 1; resize: none; }
+.sendbtn-round {
+  width: 36px; height: 36px; border-radius: 50%; border: none;
+  background: var(--gold); color: #1a1a1a; font-size: 16px; font-weight: 800;
+  cursor: pointer; flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+}
+.attach-menu {
+  display: none;
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  margin-bottom: 8px;
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius2);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  overflow: hidden;
+  z-index: 20;
+}
+.attach-menu.on { display: block; }
+.attach-menu button {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; padding: 10px 16px; background: none; border: none;
+  color: var(--txt); font-size: 13px; cursor: pointer; white-space: nowrap;
+}
+.attach-menu button:active { background: var(--surface3); }

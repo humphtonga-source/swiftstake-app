@@ -1,21 +1,23 @@
-const CACHE_NAME = 'swiftstake-v4';
+const CACHE_NAME = 'swiftstake-v5';
 const ASSETS = [
   '/swiftstake-app/',
   '/swiftstake-app/index.html',
   '/swiftstake-app/css/styles.css',
   '/swiftstake-app/js/config.js',
   '/swiftstake-app/js/db.js',
-  '/swiftstake-app/js/auth.js',
   '/swiftstake-app/js/ui.js',
-  '/swiftstake-app/js/dashboard.js',
   '/swiftstake-app/js/finance.js',
+  '/swiftstake-app/js/dashboard.js',
   '/swiftstake-app/js/analytics.js',
+  '/swiftstake-app/js/audit.js',
+  '/swiftstake-app/js/history.js',
   '/swiftstake-app/js/planning.js',
   '/swiftstake-app/js/settings.js',
-  '/swiftstake-app/js/audit.js',
+  '/swiftstake-app/js/auditlog.js',
   '/swiftstake-app/js/chat.js',
   '/swiftstake-app/js/realtime.js',
-  '/swiftstake-app/js/history.js',
+  '/swiftstake-app/js/auth.js',
+  '/swiftstake-app/js/notifications.js',
   '/swiftstake-app/icons/icon-192x192.png',
   '/swiftstake-app/icons/icon-512x512.png'
 ];
@@ -26,7 +28,7 @@ self.addEventListener('install', e => {
   self.skipWaiting();
 });
 
-// Activate
+// Activate - clears every cache from a previous version
 self.addEventListener('activate', e => {
   e.waitUntil(
     caches.keys().then(keys =>
@@ -36,22 +38,28 @@ self.addEventListener('activate', e => {
   self.clients.claim();
 });
 
-// Fetch
+// Fetch - NETWORK FIRST for the app's own files, so a code update is
+// visible the moment it's deployed. The cache is only a fallback for
+// when the network genuinely isn't reachable (offline), never a
+// permanent freeze of whatever was first cached.
 self.addEventListener('fetch', e => {
+  if (e.request.method !== 'GET') return;
+
   e.respondWith(
-    caches.match(e.request).then(cached => {
-      if (cached) return cached;
-      return fetch(e.request).then(response => {
-        if (e.request.method === 'GET' && response.status === 200) {
+    fetch(e.request)
+      .then(response => {
+        if (response && response.status === 200) {
           const clone = response.clone();
           caches.open(CACHE_NAME).then(c => c.put(e.request, clone));
         }
         return response;
-      }).catch(() => {
-        if (e.request.mode === 'navigate')
-          return caches.match('/swiftstake-app/index.html');
-      });
-    })
+      })
+      .catch(() =>
+        caches.match(e.request).then(cached => {
+          if (cached) return cached;
+          if (e.request.mode === 'navigate') return caches.match('/swiftstake-app/index.html');
+        })
+      )
   );
 });
 
