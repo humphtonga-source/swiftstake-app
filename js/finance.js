@@ -181,7 +181,11 @@ function renderFinance() {
         <input type="number" id="mpesa-fee" placeholder="M-Pesa fee (KES)" min="0" value="0" style="flex:1;border:1px solid var(--border2);border-radius:4px;padding:8px;font-size:12px;outline:none;background:var(--bg3);color:var(--txt);">
         <button onclick="calculateMpesaDeposit()" style="padding:8px 12px;background:var(--blue);color:#fff;border:none;border-radius:4px;font-size:12px;font-weight:700;cursor:pointer;">Recalc</button>
       </div>
-      <button onclick="initiateMpesaDeposit()" style="width:100%;padding:12px;background:var(--blue);color:#fff;border:none;border-radius:4px;font-size:13px;font-weight:700;cursor:pointer;">💳 Deposit via M-Pesa</button>
+      <div style="margin-bottom:10px;">
+        <label style="display:block;font-size:11px;color:var(--txt3);font-weight:700;text-transform:uppercase;margin-bottom:5px;">📄 M-Pesa Reference Code</label>
+        <input type="text" id="mpesa-ref-inp" placeholder="e.g. ABC123XYZ — from your M-Pesa message" style="width:100%;border:1px solid var(--border2);border-radius:6px;padding:10px;font-size:14px;font-weight:700;letter-spacing:0.03em;outline:none;background:var(--bg3);color:var(--txt);text-transform:uppercase;">
+      </div>
+      <button onclick="initiateMpesaDeposit()" style="width:100%;padding:12px;background:var(--blue);color:#fff;border:none;border-radius:4px;font-size:13px;font-weight:700;cursor:pointer;">💳 Confirm Deposit</button>
     </div>
     <div id="mpesa-deposit-empty" style="font-size:12px;color:var(--txt3);padding:8px;text-align:center;">Complete reconciliation to see deposit amount</div>
   </div>` : ''}
@@ -709,20 +713,25 @@ async function initiateMpesaDeposit() {
     alert('No excess cash to deposit.');
     return;
   }
+
+  const refInp = $('mpesa-ref-inp');
+  const ref = refInp ? refInp.value.trim() : '';
+  if (!ref) {
+    alert('⚠️ Please enter the M-Pesa reference code from your deposit message before confirming.');
+    if (refInp) { refInp.focus(); refInp.style.borderColor = 'var(--red)'; setTimeout(() => refInp.style.borderColor = '', 2000); }
+    return;
+  }
   
   const amt = d.mpesaCalc.afterFees;
   const ok = await confirmModal.show(
     '💳 M-Pesa Deposit',
-    `Deposit KES ${fmt(amt)} via M-Pesa?\n\nYou will:\n1. Go to M-Pesa shop\n2. Deposit KES ${fmt(amt)}\n3. Get reference number\n4. Enter reference here`,
-    '✅ Proceed',
+    `Confirm this deposit?\n\nAmount: KES ${fmt(amt)}\nReference: ${ref}\n\nMake sure you've already deposited this at an M-Pesa shop and the reference above matches your message.`,
+    '✅ Confirm',
     'var(--blue)',
     '📱'
   );
   
   if (!ok) return;
-  
-  const ref = prompt('Enter M-Pesa reference number (e.g., ABC123XYZ):');
-  if (!ref) return;
   
   const now = new Date();
   const deposit = {
@@ -761,6 +770,7 @@ async function initiateMpesaDeposit() {
   
   // Reset
   $('mpesa-fee').value = '0';
+  if (refInp) refInp.value = '';
   renderFinance();
 }
 
