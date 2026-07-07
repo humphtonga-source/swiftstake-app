@@ -168,27 +168,7 @@ function renderFinance() {
     <div id="recon-result" style="margin-top:6px;"></div>
   </div>
 
-  ${!sess.isAdmin ? `<div class="card" style="background:var(--bluel);border:1px solid rgba(59,130,246,0.2);border-radius:var(--radius2);padding:16px;margin-bottom:14px;">
-    <div style="font-size:12px;font-weight:700;color:var(--blue);text-transform:uppercase;margin-bottom:12px;">📱 M-Pesa Deposit (Auto-Calculate)</div>
-    <div id="mpesa-deposit-info" style="display:none;">
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;font-size:13px;">
-        <div><span style="color:var(--txt3);">Total Physical Cash:</span><div style="font-weight:700;color:var(--txt);font-size:14px;" id="mpesa-total-cash">KES 0</div></div>
-        <div><span style="color:var(--txt3);">Minimum to Keep:</span><div style="font-weight:700;color:var(--green);font-size:14px;" id="mpesa-threshold">KES 0</div></div>
-        <div><span style="color:var(--txt3);">Excess to Deposit:</span><div style="font-weight:700;color:var(--blue);font-size:14px;" id="mpesa-excess">KES 0</div></div>
-        <div><span style="color:var(--txt3);">After M-Pesa Fees:</span><div style="font-weight:700;color:var(--green);font-size:14px;" id="mpesa-after-fees">KES 0</div></div>
-      </div>
-      <div style="display:flex;gap:6px;margin-bottom:8px;">
-        <input type="number" id="mpesa-fee" placeholder="M-Pesa fee (KES)" min="0" value="0" style="flex:1;border:1px solid var(--border2);border-radius:4px;padding:8px;font-size:12px;outline:none;background:var(--bg3);color:var(--txt);">
-        <button onclick="calculateMpesaDeposit()" style="padding:8px 12px;background:var(--blue);color:#fff;border:none;border-radius:4px;font-size:12px;font-weight:700;cursor:pointer;">Recalc</button>
-      </div>
-      <div style="margin-bottom:10px;">
-        <label style="display:block;font-size:11px;color:var(--txt3);font-weight:700;text-transform:uppercase;margin-bottom:5px;">📄 M-Pesa Reference Code</label>
-        <input type="text" id="mpesa-ref-inp" placeholder="e.g. ABC123XYZ — from your M-Pesa message" style="width:100%;border:1px solid var(--border2);border-radius:6px;padding:10px;font-size:14px;font-weight:700;letter-spacing:0.03em;outline:none;background:var(--bg3);color:var(--txt);text-transform:uppercase;">
-      </div>
-      <button onclick="initiateMpesaDeposit()" style="width:100%;padding:12px;background:var(--blue);color:#fff;border:none;border-radius:4px;font-size:13px;font-weight:700;cursor:pointer;">💳 Confirm Deposit</button>
-    </div>
-    <div id="mpesa-deposit-empty" style="font-size:12px;color:var(--txt3);padding:8px;text-align:center;">Complete reconciliation to see deposit amount</div>
-  </div>` : ''}
+  <div id="mpesa-required-section"></div>
 
   ${!sess.isAdmin ? `<div class="card" style="background:var(--greenl);border:1px solid rgba(34,197,94,0.2);border-radius:var(--radius2);padding:16px;margin-bottom:14px;">
     <div style="font-size:12px;font-weight:700;color:var(--green);text-transform:uppercase;margin-bottom:12px;">📍 Today's Opening Float</div>
@@ -605,19 +585,38 @@ function doRecon() {
   if (!anyFilled) { resEl.innerHTML = ''; return; }
   resEl.innerHTML = `<div style="border:1px solid ${ok ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'};border-radius:var(--radius2);overflow:hidden;"><div style="background:${ok ? 'var(--greenl)' : 'var(--redl)'};padding:14px 16px;display:flex;align-items:center;gap:12px;"><span style="font-size:32px;line-height:1;">${ok ? '✅' : '⚠️'}</span><div><div style="font-size:15px;font-weight:700;color:${ok ? 'var(--green)' : 'var(--red)'};">${ok ? 'Balanced — all money accounted for' : diff > 0 ? 'KES ' + fmt(diff) + ' OVER' : 'KES ' + fmt(Math.abs(diff)) + ' SHORT'}</div><div style="font-size:12px;color:var(--txt2);margin-top:3px;">Expected: <b>KES ${fmt(expected)}</b> · Declared: <b>KES ${fmt(declared)}</b></div></div></div></div>`;
   
-  // Show M-Pesa deposit section
-  const mpesaInfo = $('mpesa-deposit-info');
-  const mpesaEmpty = $('mpesa-deposit-empty');
-  if (mpesaInfo && mpesaEmpty) {
-    if (anyFilled) {
-      mpesaInfo.style.display = 'block';
-      mpesaEmpty.style.display = 'none';
-      calculateMpesaDeposit();
-    } else {
-      mpesaInfo.style.display = 'none';
-      mpesaEmpty.style.display = 'block';
-    }
-  }
+  renderMpesaGate(notes, coins);
+}
+
+// Shows the required M-Pesa deposit box the moment physical cash (notes
+// + coins) exceeds the shop's threshold. This is not optional - submit
+// is blocked until a reference code is entered here when it appears.
+function renderMpesaGate(notes, coins) {
+  const el = $('mpesa-required-section');
+  if (!el) return;
+  const physicalCash = notes + coins;
+  const threshold = (S.cashThresholds && S.cashThresholds[activeShop]) || 5000;
+  const excess = Math.max(0, physicalCash - threshold);
+
+  if (excess <= 0) { el.innerHTML = ''; return; }
+
+  const existingRef = el.querySelector('#mpesa-ref-inp') ? el.querySelector('#mpesa-ref-inp').value : '';
+  el.innerHTML = `<div class="card" style="background:var(--redl);border:1px solid rgba(239,68,68,0.35);border-radius:var(--radius2);padding:16px;margin-bottom:14px;">
+    <div style="font-size:12px;font-weight:800;color:var(--red);text-transform:uppercase;margin-bottom:10px;">⚠️ Cash Above Threshold — Deposit Required</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;font-size:13px;">
+      <div><span style="color:var(--txt3);">Physical Cash:</span><div style="font-weight:700;color:var(--txt);font-size:15px;">KES ${fmt(physicalCash)}</div></div>
+      <div><span style="color:var(--txt3);">Threshold:</span><div style="font-weight:700;color:var(--green);font-size:15px;">KES ${fmt(threshold)}</div></div>
+    </div>
+    <div style="background:var(--bg2);border-radius:6px;padding:10px 12px;margin-bottom:12px;text-align:center;">
+      <div style="font-size:11px;color:var(--txt3);text-transform:uppercase;">Deposit This Amount to the Bank</div>
+      <div style="font-size:22px;font-weight:800;color:var(--red);margin-top:2px;">KES ${fmt(excess)}</div>
+    </div>
+    <div style="margin-bottom:6px;">
+      <label style="display:block;font-size:11px;color:var(--txt3);font-weight:700;text-transform:uppercase;margin-bottom:5px;">📄 M-Pesa Reference Code (required to submit)</label>
+      <input type="text" id="mpesa-ref-inp" value="${existingRef.replace(/"/g,'&quot;')}" placeholder="e.g. ABC123XYZ — from your M-Pesa message" style="width:100%;border:1px solid rgba(239,68,68,0.4);border-radius:6px;padding:10px;font-size:14px;font-weight:700;letter-spacing:0.03em;outline:none;background:var(--bg3);color:var(--txt);text-transform:uppercase;">
+    </div>
+    <div style="font-size:11px;color:var(--txt3);">Deposit the excess at an M-Pesa shop first, then enter the reference code from your confirmation message. Submit will be blocked until this is filled in.</div>
+  </div>`;
 }
 
 // ✅ FIX: Improved addExp with shop check
@@ -688,92 +687,6 @@ async function closingFloatConfirm(game, value) {
   }
 }
 
-function calculateMpesaDeposit() {
-  const d = S.shopData[activeShop];
-  const threshold = (S.cashThresholds && S.cashThresholds[activeShop]) || 5000;
-  const notes = N($('recon-notes') ? $('recon-notes').value : 0);
-  const coins = N($('recon-coins') ? $('recon-coins').value : 0);
-  const totalCash = notes + coins;
-  const excess = Math.max(0, totalCash - threshold);
-  const fee = N($('mpesa-fee') ? $('mpesa-fee').value : 0);
-  const afterFees = excess - fee;
-  
-  $('mpesa-total-cash').textContent = 'KES ' + fmt(totalCash);
-  $('mpesa-threshold').textContent = 'KES ' + fmt(threshold);
-  $('mpesa-excess').textContent = 'KES ' + fmt(excess);
-  $('mpesa-after-fees').textContent = 'KES ' + fmt(Math.max(0, afterFees));
-  
-  // Store for later use
-  d.mpesaCalc = {totalCash, threshold, excess, fee, afterFees: Math.max(0, afterFees)};
-}
-
-async function initiateMpesaDeposit() {
-  const d = S.shopData[activeShop];
-  if (!d.mpesaCalc || d.mpesaCalc.excess <= 0) {
-    alert('No excess cash to deposit.');
-    return;
-  }
-
-  const refInp = $('mpesa-ref-inp');
-  const ref = refInp ? refInp.value.trim() : '';
-  if (!ref) {
-    alert('⚠️ Please enter the M-Pesa reference code from your deposit message before confirming.');
-    if (refInp) { refInp.focus(); refInp.style.borderColor = 'var(--red)'; setTimeout(() => refInp.style.borderColor = '', 2000); }
-    return;
-  }
-  
-  const amt = d.mpesaCalc.afterFees;
-  const ok = await confirmModal.show(
-    '💳 M-Pesa Deposit',
-    `Confirm this deposit?\n\nAmount: KES ${fmt(amt)}\nReference: ${ref}\n\nMake sure you've already deposited this at an M-Pesa shop and the reference above matches your message.`,
-    '✅ Confirm',
-    'var(--blue)',
-    '📱'
-  );
-  
-  if (!ok) return;
-  
-  const now = new Date();
-  const deposit = {
-    id: now.getTime(),
-    shop: activeShop,
-    amount: amt,
-    gross: d.mpesaCalc.excess,
-    fee: d.mpesaCalc.fee,
-    reference: ref,
-    status: 'pending',
-    created_at: now.toISOString(),
-    created_by: sess.name,
-    confirmed_at: null,
-    confirmed_by: null
-  };
-  
-  if (!S.mpesaDeposits) S.mpesaDeposits = [];
-  S.mpesaDeposits.push(deposit);
-  
-  // Save to database
-  try {
-    const {error} = await db.from('mpesa_deposits').insert(deposit);
-    if (error) throw error;
-  } catch(e) {
-    logError('initiateMpesaDeposit', e, {shop: activeShop, amount: amt});
-    showWarning('⚠️ Deposit logged locally but could not sync to server.');
-  }
-  
-  await AuditLog.record('deposit', activeShop, 'mpesa',
-    'M-Pesa deposit initiated',
-    `KES ${fmt(amt)} (gross: KES ${fmt(d.mpesaCalc.excess)}, fee: KES ${fmt(d.mpesaCalc.fee)}) · Ref: ${ref}`
-  );
-  
-  pushNotif('💳 M-Pesa deposit initiated', `${activeShop} · KES ${fmt(amt)}`);
-  alert(`✅ Deposit recorded!\n\nRef: ${ref}\nAmount: KES ${fmt(amt)}\n\nAdmin will confirm when money arrives.`);
-  
-  // Reset
-  $('mpesa-fee').value = '0';
-  if (refInp) refInp.value = '';
-  renderFinance();
-}
-
 async function submitReport() {
   saveInputs();
   ensureShopDataExists(activeShop);
@@ -828,6 +741,34 @@ async function submitReport() {
     return;
   }
   
+  // Physical cash must be counted before submitting - this is what the
+  // whole threshold/deposit system is checked against, so it can't be skipped.
+  const notesVal = N($('recon-notes') ? $('recon-notes').value : 0);
+  const coinsVal = N($('recon-coins') ? $('recon-coins').value : 0);
+  const physicalCash = notesVal + coinsVal;
+  if (physicalCash <= 0) {
+    alert('⚠️ Validation Error\n\nPlease count and enter your Notes and Coins in Cash Reconciliation before submitting.');
+    const rn = $('recon-notes');
+    if (rn) { rn.focus(); rn.style.borderColor = 'var(--red)'; setTimeout(() => rn.style.borderColor = '', 2000); }
+    return;
+  }
+
+  // If cash is above the shop's threshold, the excess must already be
+  // deposited and its M-Pesa reference entered - submission is blocked
+  // until it is, exactly as required.
+  const threshold = (S.cashThresholds && S.cashThresholds[activeShop]) || 5000;
+  const excessCash = Math.max(0, physicalCash - threshold);
+  let mpesaRefForSubmit = '';
+  if (excessCash > 0) {
+    const refInp = $('mpesa-ref-inp');
+    mpesaRefForSubmit = refInp ? refInp.value.trim() : '';
+    if (!mpesaRefForSubmit) {
+      alert(`⚠️ Cash Above Threshold\n\nYour physical cash (KES ${fmt(physicalCash)}) is KES ${fmt(excessCash)} above the KES ${fmt(threshold)} threshold.\n\nDeposit the excess via M-Pesa and enter the reference code before submitting.`);
+      if (refInp) { refInp.focus(); refInp.style.borderColor = 'var(--red)'; setTimeout(() => refInp.style.borderColor = '', 2000); }
+      return;
+    }
+  }
+  
   // All validation passed, show confirmation
   const ok = await confirmModal.show('Submit End of Day', 'Submit the report for ' + activeShop + '? This saves it to history.', '✅ Submit', 'var(--green)', '📋');
   if (!ok) return;
@@ -880,28 +821,47 @@ async function submitReport() {
     nextDayOpening[g] = {open: cl, close: 0, topups: []};
   });
 
-  // ✅ FEATURE: Determine tomorrow's opening cash float
-  // If an M-Pesa deposit was made today (excess sent to bank), what remains
-  // with the cashier is the threshold amount (e.g. KES 5,000).
-  // If no deposit was made (e.g. cash was at/below threshold), the full
-  // counted physical cash (notes + coins) carries over as-is.
-  const threshold = (S.cashThresholds && S.cashThresholds[activeShop]) || 5000;
-  const todayStr = now.toDateString();
-  const depositedToday = (S.mpesaDeposits || []).some(dep =>
-    dep.shop === activeShop && new Date(dep.created_at).toDateString() === todayStr
-  );
-  let nextOpeningCash;
-  if (depositedToday) {
-    nextOpeningCash = threshold;
-  } else if (d.cashRecon && (N(d.cashRecon.notes) > 0 || N(d.cashRecon.coins) > 0)) {
-    nextOpeningCash = N(d.cashRecon.notes) + N(d.cashRecon.coins);
-  } else {
-    nextOpeningCash = ocash_val; // no recon done — carry forward unchanged
+  // Tomorrow's opening cash: if cash was above threshold, the excess was
+  // required to be deposited (validated above), so only the threshold
+  // remains with the cashier. If cash was at or below threshold, the
+  // full counted amount carries forward untouched.
+  const nextOpeningCash = excessCash > 0 ? threshold : physicalCash;
+
+  // If a deposit was required, record it now - atomically with the
+  // submission itself, not as a separate action that could be skipped
+  // or forgotten.
+  if (excessCash > 0) {
+    const deposit = {
+      id: now.getTime() + 1,
+      shop: activeShop,
+      amount: excessCash,
+      gross: excessCash,
+      fee: 0,
+      reference: mpesaRefForSubmit,
+      status: 'pending',
+      created_at: now.toISOString(),
+      created_by: sess.name,
+      confirmed_at: null,
+      confirmed_by: null
+    };
+    if (!S.mpesaDeposits) S.mpesaDeposits = [];
+    S.mpesaDeposits.push(deposit);
+    try {
+      const {error} = await db.from('mpesa_deposits').insert(deposit);
+      if (error) throw error;
+    } catch(e) {
+      logError('submitReport: mpesa deposit', e, {shop: activeShop, amount: excessCash});
+      showWarning('⚠️ Deposit logged locally but could not sync to server.');
+    }
+    await AuditLog.record('deposit', activeShop, 'mpesa',
+      'Required deposit on submission',
+      `KES ${fmt(excessCash)} · Ref: ${mpesaRefForSubmit} · Cash was KES ${fmt(physicalCash)}, threshold KES ${fmt(threshold)}`
+    );
   }
 
   await AuditLog.record('submit', activeShop, 'end-of-day',
     'daily state cleared',
-    `Report #${reportId} by ${sess.name} | Net KES ${fmt(net)} | Revenue KES ${fmt(tR)} | Expenses KES ${fmt(tExp)} | Cash movements KES ${fmt(totalCashAdded - totalCashWithdrawn)} | Next opening cash: KES ${fmt(nextOpeningCash)}${depositedToday ? ' (threshold, after M-Pesa deposit)' : ' (carried full cash count)'}`
+    `Report #${reportId} by ${sess.name} | Net KES ${fmt(net)} | Revenue KES ${fmt(tR)} | Expenses KES ${fmt(tExp)} | Cash movements KES ${fmt(totalCashAdded - totalCashWithdrawn)} | Next opening cash: KES ${fmt(nextOpeningCash)}${excessCash > 0 ? ' (threshold, KES ' + fmt(excessCash) + ' deposited)' : ' (carried full cash count)'}`
   );
   
   // ✅ FIX: Clear local data ONLY AFTER database and memory have been updated
