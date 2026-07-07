@@ -23,7 +23,16 @@ function ensureShopDataExists(shop) {
   return S.shopData[shop];
 }
 
+// Tracks shops with an unsaved local edit in flight (from the very
+// first keystroke through to a successful DB write). While a shop is
+// marked dirty, incoming realtime updates for it are not applied -
+// otherwise a same-device echo of one field's save can arrive while
+// another field is still mid-edit and silently wipe it out. This is
+// the actual cause of "data disappearing after typing into any box."
+window._shopDirty = window._shopDirty || {};
+
 function autoSaveShopState(shop) {
+  window._shopDirty[shop] = true;
   clearTimeout(window._autoSaveTimer);
   window._autoSaveTimer = setTimeout(() => {
     saveInputs();
@@ -36,6 +45,7 @@ async function saveShopState(shop, skip) {
   if (!skip && shop === activeShop && !_resetting) saveInputs();
   const d = ensureShopDataExists(shop);
   if (!d) return;
+  window._shopDirty[shop] = true;
   try {
     const p = {
       shop, games: d.games,
@@ -48,9 +58,12 @@ async function saveShopState(shop, skip) {
     };
     const {data:u, error:e} = await db.from('shop_state').eq('shop', shop).update(p);
     if (e || !u || !u.length) await db.from('shop_state').insert(p);
+    window._shopDirty[shop] = false; // only now is it safe to accept incoming realtime updates again
   } catch(e) {
     logError('saveShopState', e, {shop});
-    // Non-critical - offline mode should continue working
+    // Leave dirty=true on failure - a stale realtime echo overwriting
+    // an unsaved, unsuccessfully-saved edit would be worse than a
+    // realtime update being briefly delayed for this shop.
   }
 }
 

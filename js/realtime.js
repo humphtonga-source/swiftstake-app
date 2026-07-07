@@ -50,6 +50,19 @@ function subscribeToDataChanges() {
 
       const r = payload.new;
       if (!S.shopData[sh]) S.shopData[sh] = {games:{}, expenses:[], openingCash:0, cashRecon:null, cashMovements:[], openedAt:null};
+
+      // If this shop has an unsaved local edit in flight (anywhere from
+      // the first keystroke through to the save actually completing),
+      // do not let this incoming update overwrite it. Without this, a
+      // same-device echo of one field's save can arrive while another
+      // field is still mid-edit and silently erase it before it's ever
+      // persisted - this was happening intermittently on any input,
+      // not just one specific field.
+      if (window._shopDirty && window._shopDirty[sh]) {
+        if (r.games) Object.keys(r.games).forEach(g => { if (!GAMES.includes(g)) GAMES.push(g); });
+        return;
+      }
+
       S.shopData[sh].games        = r.games && Object.keys(r.games).length ? r.games : S.shopData[sh].games;
       S.shopData[sh].expenses     = Array.isArray(r.expenses) ? r.expenses : S.shopData[sh].expenses;
       S.shopData[sh].openingCash  = r.opening_cash  != null ? r.opening_cash  : S.shopData[sh].openingCash;
