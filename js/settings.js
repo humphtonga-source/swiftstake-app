@@ -432,16 +432,22 @@ async function saveCashThreshold(shop) {
   if (val > 50000) { alert('Maximum threshold is KES 50,000'); return; }
   
   if (!S.cashThresholds) S.cashThresholds = {};
+  const prevVal = S.cashThresholds[shop];
   S.cashThresholds[shop] = val;
   
-  // Save to localStorage for now (you can sync to DB later)
-  localStorage.setItem('swiftstake_cashThresholds', JSON.stringify(S.cashThresholds));
-  
   const msg = $('thresholdmsg');
-  if (msg) {
-    msg.textContent = `✅ ${shop} threshold set to KES ${fmt(val)}`;
-    msg.style.color = 'var(--green)';
-    setTimeout(() => { msg.textContent = ''; }, 3000);
+  try {
+    const {error} = await db.from('cash_thresholds').upsert({shop, amount: val, updated_by: sess.name, updated_at: new Date().toISOString()}, {onConflict: 'shop'});
+    if (error) throw new Error(error.message);
+    if (msg) {
+      msg.textContent = `✅ ${shop} threshold set to KES ${fmt(val)} — applies to every device now`;
+      msg.style.color = 'var(--green)';
+      setTimeout(() => { msg.textContent = ''; }, 3500);
+    }
+  } catch(e) {
+    logError('saveCashThreshold', e, {shop});
+    S.cashThresholds[shop] = prevVal; // revert local state since the save failed
+    if (msg) { msg.textContent = '⚠️ Could not save - please try again.'; msg.style.color = 'var(--red)'; }
   }
 }
 

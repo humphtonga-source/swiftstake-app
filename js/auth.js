@@ -56,14 +56,12 @@ async function bootApp() {
     try {
       const savedSession = localStorage.getItem('swiftstake_session');
       const savedActiveShop = localStorage.getItem('swiftstake_activeShop');
-      const savedThresholds = localStorage.getItem('swiftstake_cashThresholds');
       const savedToken = localStorage.getItem('swiftstake_token');
       
       if (savedSession && savedToken && jwtStillValid(savedToken)) {
         sess = JSON.parse(savedSession);
         sessToken = savedToken;
         if (savedActiveShop) activeShop = savedActiveShop;
-        if (savedThresholds) S.cashThresholds = JSON.parse(savedThresholds);
         
         $('app').style.display = 'flex';
         $('app').style.flexDirection = 'column';
@@ -124,6 +122,20 @@ function showErr(m) { const e = $('lerr'); e.textContent = m; e.style.display = 
 async function loadAuthenticatedData() {
   function wt(p, ms) {
     return Promise.race([p, new Promise(r => setTimeout(() => r({data:null, error:{message:'timeout'}}), ms))]);
+  }
+
+  // Thresholds live in the database now, not localStorage - a threshold
+  // an admin sets on their own device previously never reached anyone
+  // else's, meaning a cashier's submission could silently fall back to
+  // the hardcoded default instead of what the admin actually configured.
+  try {
+    const {data, error} = await wt(db.from('cash_thresholds').select('*'), 5000);
+    if (error) throw error;
+    S.cashThresholds = S.cashThresholds || {};
+    if (data) data.forEach(row => { S.cashThresholds[row.shop] = N(row.amount); });
+  } catch(e) {
+    logError('loadAuthenticatedData: cash thresholds', e);
+    // Falls back to the hardcoded 5000 default per-shop where used, not fatal
   }
 
   try {
