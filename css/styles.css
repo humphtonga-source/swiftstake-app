@@ -794,3 +794,31 @@ canvas{width:100%!important;max-height:200px;}
   color: var(--txt); font-size: 13px; cursor: pointer; white-space: nowrap;
 }
 .attach-menu button:active { background: var(--surface3); }
+
+/* ── HISTORY: admin-only cash breakdown ── */
+.hcash-toggle {
+  background: none;
+  border: 1px solid var(--border2);
+  color: var(--txt3);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.hcash-toggle:active { background: var(--surface2); }
+.hcash-detail {
+  margin-top: 8px;
+  padding: 10px 12px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius2);
+}
+.hcash-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  color: var(--txt2);
+  padding: 3px 0;
+}
