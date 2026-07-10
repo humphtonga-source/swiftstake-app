@@ -11,7 +11,7 @@ function renderDashboard() {
   const pendingTasks = (S.planTasks.daily || []).filter(t => !t.done).length;
   const submittedToday = new Set(todayRpts.map(r => r.shop));
   const pendingShops = sess.isAdmin ? SHOPS.filter(s => !submittedToday.has(s)) : [];
-  const pendingDeposits = sess.isAdmin ? (S.mpesaDeposits || []).filter(d => d.status === 'pending') : [];
+  const pendingDeposits = sess.isAdmin ? (S.mpesaDeposits || []).filter(d => d.status === 'pending' && !d.deleted_at) : [];
   const lowFloatShops = sess.isAdmin ? getLowFloatShops() : (getLowFloatShops().filter(r => r.shop === sess.shop));
   const hasAttentionItems = pendingShops.length || pendingDeposits.length || lowFloatShops.length;
 

@@ -328,7 +328,7 @@ function setupNav() {
 function updateBankingNavBadge() {
   const navBanking = $('nav-banking');
   if (!navBanking || !sess.isAdmin) return;
-  const pendingCount = (S.mpesaDeposits || []).filter(d => d.status === 'pending').length;
+  const pendingCount = (S.mpesaDeposits || []).filter(d => d.status === 'pending' && !d.deleted_at).length;
   let badge = navBanking.querySelector('.nav-badge');
   if (pendingCount > 0) {
     if (!badge) {

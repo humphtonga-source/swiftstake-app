@@ -2,8 +2,8 @@
 function renderBanking() {
   const p = $('pane-banking'); if (!p) return;
   const tB = S.banks.reduce((s,b) => s + N(b.amount), 0), tD = S.debts.reduce((s,d) => s + (N(d.amount) - N(d.paid || 0)), 0), net = tB - tD;
-  const pendingDeposits = (S.mpesaDeposits || []).filter(d => d.status === 'pending');
-  const confirmedDeposits = (S.mpesaDeposits || []).filter(d => d.status === 'confirmed');
+  const pendingDeposits = (S.mpesaDeposits || []).filter(d => d.status === 'pending' && !d.deleted_at);
+  const confirmedDeposits = (S.mpesaDeposits || []).filter(d => d.status === 'confirmed' && !d.deleted_at);
   const debtsIndexed = S.debts.map((d, i) => ({d, i}));
   const focusedDebts = debtsIndexed.filter(x => x.d.focused);
   const otherDebts = debtsIndexed.filter(x => !x.d.focused);
@@ -26,7 +26,8 @@ function renderBanking() {
         <div style="font-size:11px;color:var(--txt3);margin-bottom:8px;">By: ${d.created_by} · ${new Date(d.created_at).toLocaleString('en-KE')}</div>
         <div style="display:flex;gap:6px;">
           <input type="number" id="deposit-conf-${d.id}" placeholder="Amount received (KES)" value="${d.amount}" style="flex:1;border:1px solid var(--border2);border-radius:4px;padding:6px;font-size:12px;outline:none;background:var(--bg3);color:var(--txt);">
-          <button onclick="confirmMpesaDeposit('${d.id}',${d.id})" style="padding:6px 12px;background:var(--green);color:#fff;border:none;border-radius:4px;font-size:12px;font-weight:700;cursor:pointer;">✅ Confirm</button>
+          <button onclick="confirmMpesaDeposit('${d.id}',${d.id})" style="padding:6px 12px;background:var(--green);color:#fff;border:none;border-radius:4px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;">✅ Confirm</button>
+          <button onclick="deleteMpesaDeposit('${d.id}')" title="Delete (mistake/duplicate)" style="padding:6px 10px;background:var(--redl);color:var(--red);border:1px solid rgba(239,68,68,0.3);border-radius:4px;font-size:12px;cursor:pointer;">🗑️</button>
         </div>
       </div>`).join('')}
     </div>` : ''}
@@ -56,7 +57,7 @@ function renderBanking() {
           ${shopDeposits.length || shopWithdrawals.length ? `<div style="font-size:11px;color:var(--txt3);margin-top:8px;padding-top:8px;border-top:1px solid var(--border);">
             Recent activity:
             <div style="margin-top:4px;">
-              ${shopDeposits.map(d => `<div style="display:flex;justify-content:space-between;color:var(--txt2);margin:2px 0;"><span>📱 M-Pesa deposit</span><span style="color:var(--green);">+KES ${fmt(d.amount)}</span></div>`).join('')}
+              ${shopDeposits.map(d => `<div style="display:flex;justify-content:space-between;align-items:center;color:var(--txt2);margin:2px 0;"><span>📱 M-Pesa deposit</span><span style="display:flex;align-items:center;gap:6px;"><span style="color:var(--green);">+KES ${fmt(d.amount)}</span><button onclick="deleteMpesaDeposit('${d.id}')" title="Delete (mistake)" style="background:none;border:none;color:var(--txt3);cursor:pointer;font-size:11px;padding:2px;">🗑️</button></span></div>`).join('')}
               ${shopWithdrawals.map(w => `<div style="display:flex;justify-content:space-between;color:var(--txt2);margin:2px 0;"><span>💸 ${w.reason}</span><span style="color:var(--red);">−KES ${fmt(w.amount)}</span></div>`).join('')}
             </div>
           </div>` : ''}
@@ -493,6 +494,54 @@ async function confirmMpesaDeposit(depId, idx) {
   pushNotif('✅ Deposit confirmed', `${dep.shop}: KES ${fmt(amt)}`);
   updateBankingNavBadge();
   await AuditLog.record('confirm', dep.shop, 'mpesa-deposit', 'M-Pesa deposit confirmed', `KES ${fmt(amt)} · Ref: ${dep.reference} · Bank updated`);
+  renderBanking();
+}
+
+async function deleteMpesaDeposit(depId) {
+  const dep = S.mpesaDeposits.find(d => d.id == depId);
+  if (!dep) return;
+
+  const wasConfirmed = dep.status === 'confirmed';
+  const warning = wasConfirmed
+    ? `This deposit was already confirmed and added KES ${fmt(dep.amount)} to ${dep.shop}'s bank balance.\n\nDeleting it will also subtract that amount back out, so the bank total stays correct.\n\nRef: ${dep.reference}`
+    : `Delete this pending deposit?\n\nShop: ${dep.shop}\nAmount: KES ${fmt(dep.amount)}\nRef: ${dep.reference}`;
+  const ok = await confirmModal.show('🗑️ Delete Deposit', warning, 'Delete', 'var(--red)', '⚠️');
+  if (!ok) return;
+
+  const now = new Date().toISOString();
+  dep.deleted_at = now;
+
+  try {
+    const {error} = await db.from('mpesa_deposits').eq('id', depId).update({deleted_at: now});
+    if (error) throw error;
+  } catch(e) {
+    logError('deleteMpesaDeposit', e, {depositId: depId});
+    dep.deleted_at = null;
+    alert('⚠️ Could not delete. Please try again.');
+    return;
+  }
+
+  // If it had already been confirmed, reverse the bank balance so the
+  // total stays accurate - the deposit is being removed, so the money
+  // it added should be too.
+  if (wasConfirmed) {
+    const bank = S.banks.find(b => b.shop === dep.shop);
+    if (bank) {
+      bank.amount = N(bank.amount) - N(dep.amount);
+      try {
+        await db.from('banks').eq('id', bank.id).update({amount: bank.amount});
+      } catch(e) {
+        logError('deleteMpesaDeposit - reverse bank', e, {shop: dep.shop});
+      }
+    }
+  }
+
+  await AuditLog.record('delete', dep.shop, 'mpesa-deposit',
+    `${dep.status} · KES ${fmt(dep.amount)} · Ref: ${dep.reference}`,
+    `Deleted by ${sess.name}${wasConfirmed ? ' · Bank balance reversed by KES ' + fmt(dep.amount) : ''}`
+  );
+  pushNotif('🗑️ Deposit deleted', `${dep.shop} · KES ${fmt(dep.amount)}`);
+  updateBankingNavBadge();
   renderBanking();
 }
 
