@@ -69,6 +69,7 @@ async function bootApp() {
         await loadAuthenticatedData();
         try { _rdb.realtime.setAuth(sessToken); } catch(e) {}
         setupNav(); initPlanning(); startNotifScheduler(); subscribeToChat(); subscribeToDataChanges(); startClock(); renderChatPane();
+        if (sess && sess.name) setTimeout(() => initPushNotifications(sess.name, sess.shop || 'admin'), 3000);
         goTab('dashboard', $('nav-dashboard'));
         return; // Skip showing login screen
       } else if (savedSession) {
@@ -276,6 +277,7 @@ async function doLogin() {
   $('userpill').textContent = sess.name.split(' ')[0] + ' · ' + (sess.isAdmin ? 'Admin' : sess.shop);
   try { _rdb.realtime.setAuth(sessToken); } catch(e) {}
   setupNav(); initPlanning(); startNotifScheduler(); subscribeToChat(); subscribeToDataChanges(); startClock(); renderChatPane();
+  if (sess && sess.name) setTimeout(() => initPushNotifications(sess.name, sess.shop || 'admin'), 3000);
   goTab('dashboard', $('nav-dashboard'));
 }
 
@@ -381,10 +383,4 @@ function startClock() {
 
 
 // ── PUSH NOTIFICATION INIT (called after login) ──
-function tryInitPush() {
-  try {
-    if (typeof initPushNotifications === 'function' && sess && sess.name) {
-      setTimeout(() => initPushNotifications(sess.name, sess.shop || 'admin'), 3000);
-    }
-  } catch(e) { console.log('Push init skipped:', e); }
-}
+

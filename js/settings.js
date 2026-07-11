@@ -111,8 +111,7 @@ function renderDebtCard(d, i, isFocused) {
     ${payments.length ? `<div style="font-size:11px;color:var(--txt3);margin-top:8px;padding-top:8px;border-top:1px solid var(--border);">Payment history:<div style="margin-top:4px;">${payments.map(p => `<div style="display:flex;justify-content:space-between;color:var(--txt2);margin:2px 0;"><span>${p.date||'—'}</span><span style="color:var(--green);">+KES ${fmt(p.amount)}</span></div>`).join('')}</div></div>` : ''}
   </div>`;
 }
-async function addBank()   { const n = $('bank-name').value.trim(), a = N($('bank-amt').value); if (!n) return; const {data} = await db.from('banks').insert({name:n, amount:a}); if (data && data[0]) S.banks.push(JSON.parse(JSON.stringify(data[0]))); renderBanking(); }
-async function removeBank(id) { await db.from('banks').eq('id', id).delete(); S.banks = S.banks.filter(b => b.id != id); renderBanking(); }
+
 async function addDebt()   { const n = $('debt-name').value.trim(), a = N($('debt-amt').value), d = $('debt-due').value.trim(); if (!n || a <= 0) return; const {data} = await db.from('debts').insert({name:n, amount:a, paid:0, due_date:d||'Not set', payments:[]}); if (data && data[0]) S.debts.push(JSON.parse(JSON.stringify(data[0]))); $('debt-name').value = ''; $('debt-amt').value = ''; $('debt-due').value = ''; renderBanking(); }
 async function removeDebt(id) { await db.from('debts').eq('id', id).delete(); S.debts = S.debts.filter(d => d.id != id); renderBanking(); }
 async function recordPayment(debtId, idx) {
@@ -466,10 +465,11 @@ async function confirmMpesaDeposit(depId, idx) {
   dep.status = 'confirmed';
   dep.confirmed_at = new Date().toISOString();
   dep.confirmed_by = sess.name;
+  dep.amount = amt; // keep the record in sync with what was actually confirmed - matters if this deposit is later deleted, since deletion reverses exactly this amount
   
   // Update database
   try {
-    const {error} = await db.from('mpesa_deposits').eq('id', depId).update({status: 'confirmed', confirmed_at: dep.confirmed_at, confirmed_by: sess.name});
+    const {error} = await db.from('mpesa_deposits').eq('id', depId).update({status: 'confirmed', confirmed_at: dep.confirmed_at, confirmed_by: sess.name, amount: amt});
     if (error) throw error;
   } catch(e) {
     logError('confirmMpesaDeposit', e, {depositId: depId, amount: amt});
