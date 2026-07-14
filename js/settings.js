@@ -5,6 +5,8 @@ function renderBanking() {
   const pendingDeposits = (S.mpesaDeposits || []).filter(d => d.status === 'pending' && !d.deleted_at);
   const confirmedDeposits = (S.mpesaDeposits || []).filter(d => d.status === 'confirmed' && !d.deleted_at);
   const debtsIndexed = S.debts.map((d, i) => ({d, i}));
+  const shopAccountIds = new Set(SHOPS.map(sh => { const b = S.banks.find(bk => bk.shop === sh); return b ? b.id : null; }).filter(Boolean));
+  const otherBanks = S.banks.filter(b => !shopAccountIds.has(b.id));
   const focusedDebts = debtsIndexed.filter(x => x.d.focused);
   const otherDebts = debtsIndexed.filter(x => !x.d.focused);
   
@@ -63,6 +65,29 @@ function renderBanking() {
           </div>` : ''}
         </div>`;
       }).join('')}
+    </div>
+
+    <div class="card"><div class="cardtitle">🏦 Other Accounts
+      <span style="margin-left:auto;font-size:11px;color:var(--txt3);font-weight:400;">Savings, loans, company accounts, etc.</span>
+    </div>
+      ${otherBanks.length ? otherBanks.map(b => `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius2);padding:12px;margin-bottom:10px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <div><span class="bname">${b.name}</span>${b.shop ? `<div style="font-size:11px;color:var(--txt3);margin-top:2px;">${b.shop}</div>` : ''}</div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="font-size:15px;font-weight:800;color:var(--green);">KES ${fmt(N(b.amount))}</span>
+            <button onclick="deleteBankAccount('${b.id}')" title="Delete account" style="background:none;border:none;color:var(--txt3);cursor:pointer;font-size:13px;padding:2px;">🗑️</button>
+          </div>
+        </div>
+      </div>`).join('') : '<div style="font-size:13px;color:var(--txt3);padding:8px 0;">No other accounts yet.</div>'}
+      <div class="addrow" style="grid-template-columns:1fr 1fr;">
+        <input id="new-bank-name" placeholder="Account name" type="text">
+        <input id="new-bank-amt" placeholder="Starting balance (KES)" type="number" min="0">
+        <select id="new-bank-shop" style="grid-column:1/-1;background:var(--bg2);color:var(--txt);border:1px solid var(--border2);border-radius:6px;padding:8px;">
+          <option value="">Not linked to a shop</option>
+          ${SHOPS.map(s => `<option value="${s}">${s}</option>`).join('')}
+        </select>
+        <button onclick="addBankAccount()" style="grid-column:1/-1;">+ Add Account</button>
+      </div>
     </div>
     
     <div class="card"><div class="cardtitle">🎯 Focus Debts
@@ -147,6 +172,57 @@ async function recordPayment(debtId, idx) {
     pushNotif('💳 Payment recorded', d.name + ': KES ' + fmt(amt));
   }
   renderBanking();
+}
+
+async function addBankAccount() {
+  const nameInp = $('new-bank-name'), amtInp = $('new-bank-amt'), shopSel = $('new-bank-shop');
+  const name = nameInp ? nameInp.value.trim() : '';
+  const amt = N(amtInp ? amtInp.value : 0);
+  const shop = shopSel ? shopSel.value : '';
+
+  if (!name) { alert('Please enter an account name.'); if (nameInp) nameInp.focus(); return; }
+  if (amt < 0) { alert('Starting balance cannot be negative.'); return; }
+
+  const payload = {name, amount: amt};
+  if (shop) payload.shop = shop; // left unset for a general/company account not tied to any one shop
+
+  try {
+    const {data, error} = await db.from('banks').insert(payload);
+    if (error) throw new Error(error.message);
+    if (data && data[0]) S.banks.push(JSON.parse(JSON.stringify(data[0])));
+    await AuditLog.record('add', shop || 'General', 'banking', 'n/a', `New account "${name}" · Starting balance KES ${fmt(amt)}`);
+    pushNotif('✅ Account added', name);
+    if (nameInp) nameInp.value = '';
+    if (amtInp) amtInp.value = '';
+    if (shopSel) shopSel.value = '';
+    renderBanking();
+  } catch(e) {
+    logError('addBankAccount', e, {name});
+    alert('⚠️ Could not add account. Please try again.');
+  }
+}
+
+async function deleteBankAccount(id) {
+  const bank = S.banks.find(b => b.id == id);
+  if (!bank) return;
+  const ok = await confirmModal.show(
+    '🗑️ Delete Account',
+    `Delete "${bank.name}"?\n\nCurrent balance: KES ${fmt(N(bank.amount))}\n\nThis only removes the account record - it doesn't affect any deposits or withdrawals already logged elsewhere.`,
+    'Delete', 'var(--red)', '⚠️'
+  );
+  if (!ok) return;
+
+  try {
+    const {error} = await db.from('banks').eq('id', id).delete();
+    if (error) throw new Error(error.message);
+    S.banks = S.banks.filter(b => b.id != id);
+    await AuditLog.record('delete', bank.shop || 'General', 'banking', `"${bank.name}" · KES ${fmt(N(bank.amount))}`, `Deleted by ${sess.name}`);
+    pushNotif('🗑️ Account deleted', bank.name);
+    renderBanking();
+  } catch(e) {
+    logError('deleteBankAccount', e, {id});
+    alert('⚠️ Could not delete account. Please try again.');
+  }
 }
 
 async function saveAccountNumber(shop) {
