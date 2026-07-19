@@ -65,7 +65,7 @@ const exportErrorLog = () => {
 };
 
 let S = {
-  staff:[], shops:[], reports:[], shopData:{}, banks:[], debts:[], cashThresholds:{}, mpesaDeposits:[], bankWithdrawals:[], monthlyArchives:[],
+  staff:[], shops:[], reports:[], shopData:{}, banks:[], debts:[], cashThresholds:{}, mpesaDeposits:[], bankWithdrawals:[], monthlyArchives:[], shopDebts:[], equipment:[],
   planTasks:{daily:[],weekly:[],monthly:[]}, projects:[], notifs:[], roadmap:[]
 };
 

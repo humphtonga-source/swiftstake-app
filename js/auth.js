@@ -191,6 +191,14 @@ async function loadAuthenticatedData() {
     const {data:ma, error:ae} = await wt(db.from('monthly_archives').select('*'), 5000);
     if (ae) throw ae;
     if (ma) S.monthlyArchives = JSON.parse(JSON.stringify(ma));
+
+    const {data:sd, error:se} = await wt(db.from('shop_debts').select('*'), 5000);
+    if (se) throw se;
+    if (sd) S.shopDebts = JSON.parse(JSON.stringify(sd));
+
+    const {data:eq, error:ee} = await wt(db.from('equipment').select('*'), 5000);
+    if (ee) throw ee;
+    if (eq) S.equipment = JSON.parse(JSON.stringify(eq));
   } catch(e) {
     logError('loadAuthenticatedData: banking/debts', e);
     if (sess.isAdmin) showWarning('Could not load banking data from server.');
@@ -305,7 +313,7 @@ function doLogout() {
 }
 
 function setupNav() {
-  const ai = ['adminlbl','nav-turnover','nav-aisummary','nav-banking','nav-auditlog','nav-roadmap','nav-settings'];
+  const ai = ['adminlbl','nav-turnover','nav-aisummary','nav-banking','nav-auditlog','nav-assets','nav-roadmap','nav-settings'];
   ai.forEach(id => {
     const el = $(id);
     if (el) el.style.display = sess.isAdmin ? (id === 'adminlbl' ? 'block' : 'flex') : 'none';
@@ -363,6 +371,7 @@ function goTab(tab, el) {
     settings: renderSettings,
     banking: renderBanking,
     auditlog: renderAuditLog,
+    assets: renderAssets,
     roadmap: renderRoadmap,
     planning: renderPlanning,
     turnover: () => renderTurnover('daily'),
