@@ -58,7 +58,8 @@ function subscribeToDataChanges() {
       // field is still mid-edit and silently erase it before it's ever
       // persisted - this was happening intermittently on any input,
       // not just one specific field.
-      if (window._shopDirty && window._shopDirty[sh]) {
+      const dirtySince = window._shopDirty && window._shopDirty[sh];
+      if (dirtySince && (Date.now() - dirtySince) < (typeof SHOP_DIRTY_MAX_AGE_MS !== 'undefined' ? SHOP_DIRTY_MAX_AGE_MS : 8000)) {
         if (r.games) Object.keys(r.games).forEach(g => { if (!GAMES.includes(g)) GAMES.push(g); });
         return;
       }

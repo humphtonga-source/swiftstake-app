@@ -29,10 +29,20 @@ function ensureShopDataExists(shop) {
 // otherwise a same-device echo of one field's save can arrive while
 // another field is still mid-edit and silently wipe it out. This is
 // the actual cause of "data disappearing after typing into any box."
+//
+// Stored as a timestamp, not a boolean: if a save ever fails (network
+// blip, etc.) and is never cleared, a boolean would leave that shop
+// permanently ignoring every future realtime update for the rest of
+// the session - which looks exactly like "showing old data" even
+// while the database itself is completely correct. A timestamp lets
+// the realtime handler treat the lock as expired after a short grace
+// window regardless, bounding the worst case to a few seconds instead
+// of an entire session.
 window._shopDirty = window._shopDirty || {};
+const SHOP_DIRTY_MAX_AGE_MS = 8000;
 
 function autoSaveShopState(shop) {
-  window._shopDirty[shop] = true;
+  window._shopDirty[shop] = Date.now();
   clearTimeout(window._autoSaveTimer);
   window._autoSaveTimer = setTimeout(() => {
     saveInputs();
@@ -45,7 +55,7 @@ async function saveShopState(shop, skip) {
   if (!skip && shop === activeShop && !_resetting) saveInputs();
   const d = ensureShopDataExists(shop);
   if (!d) return;
-  window._shopDirty[shop] = true;
+  window._shopDirty[shop] = Date.now();
   try {
     const p = {
       shop, games: d.games,
@@ -58,12 +68,13 @@ async function saveShopState(shop, skip) {
     };
     const {data:u, error:e} = await db.from('shop_state').eq('shop', shop).update(p);
     if (e || !u || !u.length) await db.from('shop_state').insert(p);
-    window._shopDirty[shop] = false; // only now is it safe to accept incoming realtime updates again
+    delete window._shopDirty[shop]; // only now is it safe to accept incoming realtime updates again
   } catch(e) {
     logError('saveShopState', e, {shop});
-    // Leave dirty=true on failure - a stale realtime echo overwriting
-    // an unsaved, unsuccessfully-saved edit would be worse than a
-    // realtime update being briefly delayed for this shop.
+    // Leave the timestamp in place on failure - a stale realtime echo
+    // overwriting an unsaved edit would be worse than briefly delaying
+    // an incoming update - but it will still expire on its own shortly,
+    // rather than locking this shop out of realtime updates indefinitely.
   }
 }
 
