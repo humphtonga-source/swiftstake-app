@@ -832,3 +832,26 @@ canvas{width:100%!important;max-height:200px;}
   color: var(--txt2);
   padding: 3px 0;
 }
+
+/* ── M-PESA STK PUSH WIDGET ── */
+.stk-pending, .stk-success, .stk-failed {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius2);
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.stk-pending { background: var(--goldl); color: var(--gold); }
+.stk-success { background: var(--greenl); color: var(--green); font-weight: 700; }
+.stk-failed { background: var(--redl); color: var(--red); }
+.stk-spinner {
+  width: 14px; height: 14px;
+  border: 2px solid rgba(245,158,11,0.3);
+  border-top-color: var(--gold);
+  border-radius: 50%;
+  animation: stk-spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+@keyframes stk-spin { to { transform: rotate(360deg); } }
