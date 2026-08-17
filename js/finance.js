@@ -119,7 +119,6 @@ function renderFinance() {
   </div>
   ${shopTabsHTML}
   <div id="shop-display" style="font-size:12px;color:var(--txt3);margin-bottom:14px;"></div>
-  <div id="mpesa-request-widget"></div>
   <div id="low-float-banner"></div>
 
   <div class="card" style="border-color:rgba(245,158,11,0.3);">
@@ -207,7 +206,6 @@ function renderFinance() {
   <button class="submitbtn" onclick="submitReport()">✅ Submit End of Day Report</button>`;
 
   loadShopData(activeShop);
-  renderMpesaWidget();
   
   // Render AI coach insights for cashiers
   setTimeout(() => renderAiCoach(), 100);

@@ -199,6 +199,10 @@ async function loadAuthenticatedData() {
     const {data:eq, error:ee} = await wt(db.from('equipment').select('*'), 5000);
     if (ee) throw ee;
     if (eq) S.equipment = JSON.parse(JSON.stringify(eq));
+
+    const {data:mc, error:mce} = await wt(db.from('mpesa_shop_config').select('*'), 5000);
+    if (mce) throw mce;
+    if (mc) S.mpesaShopConfig = JSON.parse(JSON.stringify(mc));
   } catch(e) {
     logError('loadAuthenticatedData: banking/debts', e);
     if (sess.isAdmin) showWarning('Could not load banking data from server.');
@@ -371,6 +375,7 @@ function goTab(tab, el) {
     settings: renderSettings,
     banking: renderBanking,
     auditlog: renderAuditLog,
+    mpesa: renderMpesaPage,
     assets: renderAssets,
     roadmap: renderRoadmap,
     planning: renderPlanning,
