@@ -56,11 +56,15 @@ async function sendStkPush() {
   btn.disabled = true; btn.textContent = 'Sending...';
   if (statusEl) statusEl.innerHTML = '';
 
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 25000);
+
   try {
     const resp = await fetch(SUPABASE_URL + '/functions/v1/mpesa-stk-push', {
       method: 'POST',
       headers: {'Content-Type': 'application/json', 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + (sessToken || SUPABASE_KEY)},
-      body: JSON.stringify({shop: _mpesaActiveShop, phone, amount, initiatedBy: sess.name})
+      body: JSON.stringify({shop: _mpesaActiveShop, phone, amount, initiatedBy: sess.name}),
+      signal: controller.signal
     });
     const data = await resp.json();
     if (!resp.ok || data.error) throw new Error(data.error || 'Could not send prompt');
@@ -69,9 +73,11 @@ async function sendStkPush() {
     if (phoneInp) phoneInp.value = '';
     if (amtInp) amtInp.value = '';
   } catch(e) {
+    const msg = e.name === 'AbortError' ? 'Timed out after 25s with no response - check the M-Pesa page again shortly, or try again.' : e.message;
     logError('sendStkPush', e);
-    if (statusEl) statusEl.innerHTML = `<div class="stk-failed">⚠️ ${e.message}</div>`;
+    if (statusEl) statusEl.innerHTML = `<div class="stk-failed">⚠️ ${msg}</div>`;
   } finally {
+    clearTimeout(timer);
     btn.disabled = false; btn.textContent = '📲 Send Payment Prompt';
   }
 }
