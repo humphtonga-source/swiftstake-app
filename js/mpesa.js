@@ -3,6 +3,14 @@
 // manage each shop's Daraja Go-Live status as real production tills
 // come online one by one.
 
+// Must exactly match the server-side shopToken() in mpesa-stk-push -
+// otherwise the secret names shown here won't be what the function
+// actually looks for. A shop name with a space (e.g. "NYERI SHOP")
+// needs that space converted to an underscore, same as the server.
+function mpesaShopToken(shop) {
+  return shop.toUpperCase().replace(/[^A-Z0-9]/g, '_');
+}
+
 let _stkChannel = null;
 let _mpesaActiveShop = null;
 
@@ -144,7 +152,7 @@ function renderDarajaConfigSection() {
           </select>
         </div>
         <button onclick="saveDarajaConfig('${sh}')" style="width:100%;padding:7px;background:var(--surface2);color:var(--txt);border:1px solid var(--border2);border-radius:4px;font-size:12px;font-weight:700;cursor:pointer;">Save</button>
-        ${isLive ? `<div style="font-size:11px;color:var(--txt3);margin-top:8px;">Reads secrets named <code>MPESA_${sh.toUpperCase()}_CONSUMER_KEY</code>, <code>MPESA_${sh.toUpperCase()}_CONSUMER_SECRET</code>, <code>MPESA_${sh.toUpperCase()}_PASSKEY</code> - set these in Edge Functions → Secrets before switching this to Production.</div>` : ''}
+        ${isLive ? `<div style="font-size:11px;color:var(--txt3);margin-top:8px;">Reads secrets named <code>MPESA_${mpesaShopToken(sh)}_CONSUMER_KEY</code>, <code>MPESA_${mpesaShopToken(sh)}_CONSUMER_SECRET</code>, <code>MPESA_${mpesaShopToken(sh)}_PASSKEY</code> - set these in Edge Functions → Secrets before switching this to Production.</div>` : ''}
       </div>`;
     }).join('')}
   </div>`;
