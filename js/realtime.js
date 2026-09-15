@@ -51,15 +51,15 @@ function subscribeToDataChanges() {
       const r = payload.new;
       if (!S.shopData[sh]) S.shopData[sh] = {games:{}, expenses:[], openingCash:0, cashRecon:null, cashMovements:[], openedAt:null};
 
-      // If this shop has an unsaved local edit in flight (anywhere from
-      // the first keystroke through to the save actually completing),
-      // do not let this incoming update overwrite it. Without this, a
-      // same-device echo of one field's save can arrive while another
-      // field is still mid-edit and silently erase it before it's ever
-      // persisted - this was happening intermittently on any input,
-      // not just one specific field.
-      const dirtySince = window._shopDirty && window._shopDirty[sh];
-      if (dirtySince && (Date.now() - dirtySince) < (typeof SHOP_DIRTY_MAX_AGE_MS !== 'undefined' ? SHOP_DIRTY_MAX_AGE_MS : 8000)) {
+      // ✅ FIX: If this shop has an unsaved local edit in flight, skip this realtime update
+      // Without this, a same-device echo of one field's save can arrive while another
+      // field is still mid-edit and silently erase it before it's ever persisted.
+      const dirtyInfo = window._shopDirty && window._shopDirty[sh];
+      const isDirty = dirtyInfo && (Date.now() - dirtyInfo.startTime) < (typeof SHOP_DIRTY_MAX_AGE_MS !== 'undefined' ? SHOP_DIRTY_MAX_AGE_MS : 8000);
+      
+      if (isDirty) {
+        // Skip this realtime update to protect unsaved edits
+        // Still add new games though
         if (r.games) Object.keys(r.games).forEach(g => { if (!GAMES.includes(g)) GAMES.push(g); });
         return;
       }

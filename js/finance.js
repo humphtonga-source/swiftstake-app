@@ -42,7 +42,11 @@ window._shopDirty = window._shopDirty || {};
 const SHOP_DIRTY_MAX_AGE_MS = 8000;
 
 function autoSaveShopState(shop) {
-  window._shopDirty[shop] = Date.now();
+  // ✅ FIX: Don't queue overlapping saves - if a save is already pending for this shop, wait
+  if (window._shopDirty[shop] && (Date.now() - window._shopDirty[shop]) < 1500) {
+    return; // Save already in flight
+  }
+  
   clearTimeout(window._autoSaveTimer);
   window._autoSaveTimer = setTimeout(() => {
     saveInputs();
@@ -55,7 +59,15 @@ async function saveShopState(shop, skip) {
   if (!skip && shop === activeShop && !_resetting) saveInputs();
   const d = ensureShopDataExists(shop);
   if (!d) return;
-  window._shopDirty[shop] = Date.now();
+  
+  // ✅ FIX: Use unique save ID to prevent race conditions
+  // Older saves won't clear the dirty flag for newer saves
+  const saveId = Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+  window._shopDirty[shop] = {
+    startTime: Date.now(),
+    saveId: saveId
+  };
+  
   try {
     const p = {
       shop, games: d.games,
@@ -68,7 +80,11 @@ async function saveShopState(shop, skip) {
     };
     const {data:u, error:e} = await db.from('shop_state').eq('shop', shop).update(p);
     if (e || !u || !u.length) await db.from('shop_state').insert(p);
-    delete window._shopDirty[shop]; // only now is it safe to accept incoming realtime updates again
+    
+    // ✅ Only clear dirty flag if THIS save is still the latest one
+    if (window._shopDirty[shop] && window._shopDirty[shop].saveId === saveId) {
+      delete window._shopDirty[shop];
+    }
   } catch(e) {
     logError('saveShopState', e, {shop});
     // Leave the timestamp in place on failure - a stale realtime echo
@@ -316,31 +332,53 @@ async function removeTopup(g, i) {
 
 let _resetting = false;
 
-// ✅ FIX: Improved saveInputs with shop existence check
+// ✅ FIX: Improved saveInputs - atomic read from DOM before applying to state
 function saveInputs() {
   if (_resetting) return;
   const shop = activeShop;
   ensureShopDataExists(shop);
   const d = S.shopData[shop];
   
+  // STEP 1: Read all values from DOM synchronously FIRST
   const oci = $('opening-cash-inp'); 
-  if (oci && oci.value !== '') d.openingCash = N(oci.value);
+  const openingCashValue = (oci && oci.value !== '') ? N(oci.value) : d.openingCash;
+  
+  const gameValues = {};
+  GAMES.forEach(g => {
+    gameValues[g] = {
+      open: null,
+      close: null
+    };
+    const oi = $(`${g}-open`), ci = $(`${g}-close`);
+    if (oi && oi.value !== '') gameValues[g].open = N(oi.value);
+    if (ci && ci.value !== '') gameValues[g].close = N(ci.value);
+  });
+  
+  const expenseValues = [];
+  const rows = document.querySelectorAll('#explist .exprow');
+  rows.forEach((row, i) => {
+    const descEl = row.querySelector('input[type="text"]'), amtEl = row.querySelector('input[type="number"]');
+    if (descEl && amtEl) {
+      expenseValues.push({
+        desc: descEl.value || '',
+        amount: amtEl.value !== '' ? parseFloat(amtEl.value) || 0 : 0
+      });
+    }
+  });
+  
+  // STEP 2: Now apply all values atomically to S.shopData
+  d.openingCash = openingCashValue;
   
   GAMES.forEach(g => {
     if (!d.games[g]) d.games[g] = {open:0, close:0, topups:[]};
-    const oi = $(`${g}-open`), ci = $(`${g}-close`);
-    if (oi && oi.value !== '') d.games[g].open  = N(oi.value);
-    if (ci && ci.value !== '') d.games[g].close = N(ci.value);
+    if (gameValues[g].open !== null) d.games[g].open = gameValues[g].open;
+    if (gameValues[g].close !== null) d.games[g].close = gameValues[g].close;
+    // Preserve topups - don't clear them
+    if (!Array.isArray(d.games[g].topups)) d.games[g].topups = [];
   });
   
-  const rows = document.querySelectorAll('#explist .exprow');
-  rows.forEach((row, i) => {
-    if (d.expenses[i]) {
-      const descEl = row.querySelector('input[type="text"]'), amtEl = row.querySelector('input[type="number"]');
-      if (descEl) d.expenses[i].desc   = descEl.value;
-      if (amtEl) d.expenses[i].amount = parseFloat(amtEl.value) || 0;
-    }
-  });
+  // Replace expense array atomically
+  d.expenses = expenseValues;
 }
 
 function loadShopData(shop) {
@@ -819,8 +857,9 @@ async function submitReport() {
   const timeStr = now.toLocaleTimeString('en-KE',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
   const reportId = now.getTime();
   
-  // ✅ FIX: Save to database BEFORE clearing local data (prevents data loss)
+  // ✅ CRITICAL FIX: Save to database BEFORE clearing local data (prevents data loss)
   let dbSaved = false;
+  let dbError = null;
   try { 
     const {error} = await db.from('reports').insert({
       id:reportId, shop:activeShop, date:dateStr, time:timeStr, by_name:sess.name, 
@@ -830,11 +869,41 @@ async function submitReport() {
     if (error) throw error;
     dbSaved = true;
   } catch(e) {
-    logError('submitReport: database save', e, {shop: activeShop, reportId});
-    showWarning('⚠️ Report saved locally but could not sync to server. Will retry when connection is restored.');
+    dbError = e;
+    logError('submitReport: database save FAILED', e, {shop: activeShop, reportId});
+    // DO NOT PROCEED - data must be saved before clearing
+    const ok = await confirmModal.show('⚠️ Sync Failed', 
+      'Report could not sync to server:\n\n' + (e.message || 'Network error') + '\n\nPlease check your connection and try again. Your data is safe locally.',
+      '🔄 Retry',
+      'var(--blue)',
+      '⚠️');
+    if (!ok) return; // User wants to abort
+    
+    // User wants to retry - try once more
+    try {
+      const {error: retryError} = await db.from('reports').insert({
+        id:reportId, shop:activeShop, date:dateStr, time:timeStr, by_name:sess.name, 
+        games:gs, expenses, cash_movements: cashMov, cash_recon:d.cashRecon||null, 
+        totals:{openingCash:ocash_val, topup:tT, cashAdded: totalCashAdded, cashWithdrawn: totalCashWithdrawn, revenue:tR, expenses:tExp, net}
+      });
+      if (retryError) throw retryError;
+      dbSaved = true;
+      dbError = null;
+    } catch(retryE) {
+      logError('submitReport: retry also failed', retryE, {shop: activeShop, reportId});
+      alert('❌ Sync failed after retry. Your data is saved locally and will sync when connection is restored.');
+      return;
+    }
   }
   
-  // ✅ FIX: Save report to in-memory S.reports BEFORE clearing shop data
+  if (!dbSaved) {
+    logError('submitReport: database save never succeeded', dbError, {shop: activeShop, reportId});
+    return;
+  }
+  
+  // ✅ CRITICAL FIX: Save report to in-memory S.reports BEFORE clearing shop data
+  // This is our backup in case DB is out of sync
+  if (!S.reports) S.reports = [];
   S.reports.unshift({id:reportId, shop:activeShop, date:dateStr, time:timeStr, by:sess.name, games:gs, expenses, cashMovements: cashMov, cashRecon:d.cashRecon||null, totals:{openingCash:ocash_val, topup:tT, cashAdded: totalCashAdded, cashWithdrawn: totalCashWithdrawn, revenue:tR, expenses:tExp, net}});
   
   // ✅ FEATURE: Carry over closing float as next opening float
@@ -888,11 +957,30 @@ async function submitReport() {
     `Report #${reportId} by ${sess.name} | Net KES ${fmt(net)} | Revenue KES ${fmt(tR)} | Expenses KES ${fmt(tExp)} | Cash movements KES ${fmt(totalCashAdded - totalCashWithdrawn)} | Next opening cash: KES ${fmt(nextOpeningCash)}${excessCash > 0 ? ' (threshold, KES ' + fmt(excessCash) + ' deposited)' : ' (carried full cash count)'}`
   );
   
-  // ✅ FIX: Clear local data ONLY AFTER database and memory have been updated
+  // ✅ CRITICAL FIX: Clear local data ONLY AFTER all database saves are confirmed
   clearTimeout(recalc._t);
   _resetting = true;
-  S.shopData[activeShop] = {games:nextDayOpening, expenses:[], openingCash:nextOpeningCash, cashRecon:null, cashMovements:[], openedAt:null, submittedAt: new Date().toISOString(), submittedBy: sess.name};
-  await saveShopState(activeShop, true);
+  
+  // Set the next day opening state
+  const nextShopState = {
+    games:nextDayOpening, 
+    expenses:[], 
+    openingCash:nextOpeningCash, 
+    cashRecon:null, 
+    cashMovements:[], 
+    openedAt:null, 
+    submittedAt: new Date().toISOString(), 
+    submittedBy: sess.name
+  };
+  S.shopData[activeShop] = nextShopState;
+  
+  // Save the next day state to database immediately
+  try {
+    await saveShopState(activeShop, true);
+  } catch(saveErr) {
+    logError('submitReport: failed to save next day state', saveErr, {shop: activeShop});
+    // Still continue - the reset has happened in memory and DB will catch up
+  }
   
   pushNotif('✅ Report submitted', activeShop + ' · Net KES ' + fmt(net));
   alert('✅ Report submitted!\nShop: ' + activeShop + '\nNet: KES ' + fmt(net));
