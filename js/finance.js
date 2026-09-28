@@ -41,6 +41,44 @@ function ensureShopDataExists(shop) {
 window._shopDirty = window._shopDirty || {};
 const SHOP_DIRTY_MAX_AGE_MS = 8000;
 
+// Last known-good server values per shop, keyed by the same fields
+// shop_state stores. This is how saveShopState (below) tells "this tab
+// actually edited this field" apart from "this field is just sitting
+// at whatever this tab last loaded or was initialized to." Set every
+// time refreshShopData() pulls a fresh row, and again after every
+// successful save. See saveShopState() for why this exists - it's what
+// stops one tab's stale copy of (say) expenses from silently wiping
+// out another session's newer edits to that same field.
+window._shopBaseline = window._shopBaseline || {};
+
+function _isBlankGames(games) {
+  if (!games || !Object.keys(games).length) return true;
+  return Object.values(games).every(g => !g || (N(g.open) === 0 && N(g.close) === 0 && (!g.topups || !g.topups.length)));
+}
+
+function _fieldIsBlank(key, value) {
+  if (key === 'games') return _isBlankGames(value);
+  if (key === 'expenses' || key === 'cash_movements') return !Array.isArray(value) || value.length === 0;
+  if (key === 'opening_cash') return !value;
+  return !value; // cash_recon, opened_at
+}
+
+function _deepEq(a, b) {
+  try { return JSON.stringify(a) === JSON.stringify(b); } catch(e) { return a === b; }
+}
+
+function _snapshotServerFields(row) {
+  row = row || {};
+  return {
+    games: row.games || {},
+    expenses: Array.isArray(row.expenses) ? row.expenses : [],
+    opening_cash: row.opening_cash || 0,
+    cash_recon: row.cash_recon || null,
+    cash_movements: Array.isArray(row.cash_movements) ? row.cash_movements : [],
+    opened_at: row.opened_at || null
+  };
+}
+
 function autoSaveShopState(shop) {
   // ✅ FIX: Don't queue overlapping saves - if a save is already pending for this shop, wait
   if (window._shopDirty[shop] && (Date.now() - window._shopDirty[shop]) < 1500) {
@@ -69,17 +107,59 @@ async function saveShopState(shop, skip) {
   };
   
   try {
-    const p = {
-      shop, games: d.games,
+    const local = {
+      games: d.games,
       expenses: Array.isArray(d.expenses) ? d.expenses : [],
       opening_cash: d.openingCash || 0,
       cash_recon: d.cashRecon || null,
       cash_movements: Array.isArray(d.cashMovements) ? d.cashMovements : [],
-      opened_at: d.openedAt || null,
-      updated_at: new Date().toISOString()
+      opened_at: d.openedAt || null
     };
+
+    // 🛡️ MERGE GUARD (fixes the Sept 22 data-loss incident): this used
+    // to push `local` straight to the DB as a full-row overwrite. If
+    // this tab's copy of a field was stale - never loaded, or loaded a
+    // while ago and since changed by another session - that save would
+    // silently erase the newer data underneath it. Now we pull the
+    // current server row right before writing, and for every field
+    // this tab hasn't actually changed (still blank, or unchanged since
+    // the last known-good server snapshot) we keep the SERVER's value
+    // instead of blindly pushing our local one. Only fields this tab
+    // genuinely edited get written from `local`.
+    const baseline = window._shopBaseline[shop];
+    let serverRow = null;
+    try {
+      const {data: freshRows, error: freshErr} = await db.from('shop_state').eq('shop', shop).select('*');
+      if (!freshErr && freshRows && freshRows.length) serverRow = freshRows[0];
+    } catch(fetchErr) {
+      logError('saveShopState: pre-save fetch failed, falling back to local values', fetchErr, {shop});
+    }
+
+    const p = { shop, updated_at: new Date().toISOString() };
+    Object.keys(local).forEach(key => {
+      const localVal = local[key];
+      const touchedLocally = baseline ? !_deepEq(localVal, baseline[key]) : !_fieldIsBlank(key, localVal);
+      if (touchedLocally || !serverRow) {
+        p[key] = localVal;
+      } else {
+        p[key] = serverRow[key];
+        // Reflect the real server value back into memory too, so the
+        // UI stops showing this tab's stale/blank copy of a field it
+        // never actually touched.
+        if (key === 'games') d.games = serverRow.games || d.games;
+        else if (key === 'expenses') d.expenses = Array.isArray(serverRow.expenses) ? serverRow.expenses : d.expenses;
+        else if (key === 'opening_cash') d.openingCash = serverRow.opening_cash || 0;
+        else if (key === 'cash_recon') d.cashRecon = serverRow.cash_recon || null;
+        else if (key === 'cash_movements') d.cashMovements = Array.isArray(serverRow.cash_movements) ? serverRow.cash_movements : d.cashMovements;
+        else if (key === 'opened_at') d.openedAt = serverRow.opened_at || null;
+      }
+    });
+
     const {data:u, error:e} = await db.from('shop_state').eq('shop', shop).update(p);
     if (e || !u || !u.length) await db.from('shop_state').insert(p);
+
+    // This save's outcome is now the new baseline for this shop.
+    window._shopBaseline[shop] = _snapshotServerFields(p);
     
     // ✅ Only clear dirty flag if THIS save is still the latest one
     if (window._shopDirty[shop] && window._shopDirty[shop].saveId === saveId) {
@@ -500,6 +580,7 @@ async function refreshShopData(shop) {
     if (error) throw error;
     if (!data || !data.length) {
       ensureShopDataExists(shop);
+      window._shopBaseline[shop] = _snapshotServerFields({});
       return;
     }
     const row = JSON.parse(JSON.stringify(data[0]));
@@ -511,6 +592,7 @@ async function refreshShopData(shop) {
     S.shopData[shop].cashMovements = Array.isArray(row.cash_movements) ? row.cash_movements : [];
     S.shopData[shop].openedAt = row.opened_at || null;
     if (row.games) Object.keys(row.games).forEach(g => { if (!GAMES.includes(g)) GAMES.push(g); });
+    window._shopBaseline[shop] = _snapshotServerFields(row);
   } catch(e) {
     logError('refreshShopData', e, {shop});
     ensureShopDataExists(shop);
