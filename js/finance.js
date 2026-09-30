@@ -279,11 +279,26 @@ function renderFinance() {
     </div>
     <div id="push-recon-status" style="font-size:11px;margin-bottom:8px;min-height:14px;"></div>
     <div class="ibar">Opening Float + Revenue − Expenses = Expected Float. Compare to actual notes, coins, and M-Pesa.</div>
+    <div class="ibar" style="background:var(--goldl);color:var(--gold);border:1px solid rgba(245,158,11,0.3);">🙈 Blind count: enter what's actually in the drawer first. The expected total stays hidden until you lock your count in, so the count can't be nudged to match.</div>
     <div class="recongrid">
-      <div class="reconmc" style="background:var(--greenl);border:1px solid rgba(34,197,94,0.2);"><div class="fl-lbl" style="color:var(--green);">💵 Notes (KES)</div><input type="number" id="recon-notes" class="fl-inp" placeholder="0" min="0" oninput="doRecon()" style="margin-top:6px;font-size:18px;font-weight:800;border-color:rgba(34,197,94,0.4);background:var(--bg2);"></div>
-      <div class="reconmc" style="background:var(--greenl);border:1px solid rgba(34,197,94,0.2);"><div class="fl-lbl" style="color:var(--green);">🪙 Coins (KES)</div><input type="number" id="recon-coins" class="fl-inp" placeholder="0" min="0" oninput="doRecon()" style="margin-top:6px;font-size:18px;font-weight:800;border-color:rgba(34,197,94,0.4);background:var(--bg2);"></div>
-      <div class="reconmc" style="background:var(--bluel);border:1px solid rgba(59,130,246,0.2);"><div class="fl-lbl" style="color:var(--blue);">📱 M-Pesa (KES)</div><input type="number" id="recon-mpesa" class="fl-inp" placeholder="0" min="0" oninput="doRecon()" style="margin-top:6px;font-size:18px;font-weight:800;border-color:rgba(59,130,246,0.4);background:var(--bg2);"></div>
-      <div class="reconmc" style="background:var(--surface2);border:1px solid var(--border);"><div class="fl-lbl">🎯 Expected Float (KES)</div><div id="recon-expected" style="font-size:20px;font-weight:800;color:var(--txt);margin-top:8px;">KES 0</div><div id="recon-diff" style="font-size:12px;font-weight:700;margin-top:6px;color:var(--txt3);">Enter amounts to check</div></div>
+      <div class="reconmc" style="background:var(--greenl);border:1px solid rgba(34,197,94,0.2);"><div class="fl-lbl" style="color:var(--green);">💵 Notes (KES)</div><input type="number" id="recon-notes" class="fl-inp" placeholder="0" min="0" oninput="onReconInputChanged()" style="margin-top:6px;font-size:18px;font-weight:800;border-color:rgba(34,197,94,0.4);background:var(--bg2);"></div>
+      <div class="reconmc" style="background:var(--greenl);border:1px solid rgba(34,197,94,0.2);"><div class="fl-lbl" style="color:var(--green);">🪙 Coins (KES)</div><input type="number" id="recon-coins" class="fl-inp" placeholder="0" min="0" oninput="onReconInputChanged()" style="margin-top:6px;font-size:18px;font-weight:800;border-color:rgba(34,197,94,0.4);background:var(--bg2);"></div>
+      <div class="reconmc" style="background:var(--bluel);border:1px solid rgba(59,130,246,0.2);"><div class="fl-lbl" style="color:var(--blue);">📱 M-Pesa (KES)</div><input type="number" id="recon-mpesa" class="fl-inp" placeholder="0" min="0" oninput="onReconInputChanged()" style="margin-top:6px;font-size:18px;font-weight:800;border-color:rgba(59,130,246,0.4);background:var(--bg2);"></div>
+      <div class="reconmc" id="recon-expected-card" style="background:var(--surface2);border:1px solid var(--border);">
+        <div id="recon-locked-view">
+          <div class="fl-lbl">🎯 Expected Float</div>
+          <div style="font-size:12px;color:var(--txt3);margin-top:8px;">Hidden until count is locked</div>
+        </div>
+        <div id="recon-revealed-view" style="display:none;">
+          <div class="fl-lbl">🎯 Expected Float (KES)</div>
+          <div id="recon-expected" style="font-size:20px;font-weight:800;color:var(--txt);margin-top:8px;">KES 0</div>
+          <div id="recon-diff" style="font-size:12px;font-weight:700;margin-top:6px;color:var(--txt3);"></div>
+        </div>
+      </div>
+    </div>
+    <button id="recon-lock-btn" class="submitbtn" style="margin-top:10px;" onclick="lockReconCount()">🔒 Lock Count &amp; Reveal Expected</button>
+    <div id="recon-recount-wrap" style="display:none;margin-top:10px;text-align:center;">
+      <a onclick="unlockReconCount()" style="font-size:12px;color:var(--txt3);text-decoration:underline;cursor:pointer;">Recount (admin)</a>
     </div>
     <div id="recon-result" style="margin-top:6px;"></div>
   </div>
@@ -502,27 +517,41 @@ function loadShopData(shop) {
     });
     
     const rn = $('recon-notes'), rc = $('recon-coins'), rm = $('recon-mpesa');
+    const lockedView = $('recon-locked-view'), revealedView = $('recon-revealed-view');
+    const lockBtn = $('recon-lock-btn'), recountWrap = $('recon-recount-wrap');
     if (d.cashRecon) {
-      if (rn && d.cashRecon.notes) {
-        rn.value = d.cashRecon.notes;
-        rn.disabled = !canEditClosing;
-      }
-      if (rc && d.cashRecon.coins) {
-        rc.value = d.cashRecon.coins;
-        rc.disabled = !canEditClosing;
-      }
-      if (rm && d.cashRecon.mpesa) {
-        rm.value = d.cashRecon.mpesa;
-        rm.disabled = !canEditClosing;
+      if (rn && d.cashRecon.notes) rn.value = d.cashRecon.notes;
+      if (rc && d.cashRecon.coins) rc.value = d.cashRecon.coins;
+      if (rm && d.cashRecon.mpesa) rm.value = d.cashRecon.mpesa;
+      if (d.cashRecon.locked) {
+        // Restore the revealed state exactly as this shift left it - the
+        // blind-count protection only matters before the first reveal;
+        // once locked, showing it again on reload isn't re-peeking.
+        [rn, rc, rm].forEach(el => { if (el) el.disabled = true; });
+        if (lockedView) lockedView.style.display = 'none';
+        if (revealedView) revealedView.style.display = 'block';
+        if (lockBtn) lockBtn.style.display = 'none';
+        if (recountWrap) recountWrap.style.display = 'block';
+        doRecon();
+      } else {
+        [rn, rc, rm].forEach(el => { if (el) el.disabled = false; });
+        if (lockedView) lockedView.style.display = 'block';
+        if (revealedView) revealedView.style.display = 'none';
+        if (lockBtn) lockBtn.style.display = 'block';
+        if (recountWrap) recountWrap.style.display = 'none';
       }
     } else {
       if (rn) rn.value = '';
       if (rc) rc.value = '';
       if (rm) rm.value = '';
-      const re = $('recon-expected'), rd = $('recon-diff'), rr = $('recon-result');
-      if (re) re.textContent = 'KES 0';
-      if (rd) { rd.textContent = 'Enter amounts to check'; rd.style.color = 'var(--txt3)'; }
+      [rn, rc, rm].forEach(el => { if (el) el.disabled = false; });
+      if (lockedView) lockedView.style.display = 'block';
+      if (revealedView) revealedView.style.display = 'none';
+      if (lockBtn) lockBtn.style.display = 'block';
+      if (recountWrap) recountWrap.style.display = 'none';
+      const rr = $('recon-result');
       if (rr) rr.innerHTML = '';
+      const el2 = $('mpesa-required-section'); if (el2) el2.innerHTML = '';
     }
     
     // Show opening float for today's games. Reading 'open' (not 'close')
@@ -567,6 +596,16 @@ async function switchShop(el, shop) {
   const cashmovlog = $('cashmov-log'); if (cashmovlog) cashmovlog.innerHTML = '';
   ['s-rev','s-exp','eod-ocash','eod-topup','eod-rev','eod-exp','eod-net','eod-cashadd','eod-cashwith'].forEach(id => { const e = $(id); if (e) e.textContent = 'KES 0'; });
   const sn = $('s-net'); if (sn) { sn.textContent = 'KES 0'; sn.className = 'mcval'; }
+  const rn2 = $('recon-notes'), rc2 = $('recon-coins'), rm2 = $('recon-mpesa');
+  if (rn2) { rn2.value = ''; rn2.disabled = false; }
+  if (rc2) { rc2.value = ''; rc2.disabled = false; }
+  if (rm2) { rm2.value = ''; rm2.disabled = false; }
+  const lv2 = $('recon-locked-view'), rv2 = $('recon-revealed-view'), lb2 = $('recon-lock-btn'), rw2 = $('recon-recount-wrap');
+  if (lv2) lv2.style.display = 'block';
+  if (rv2) rv2.style.display = 'none';
+  if (lb2) lb2.style.display = 'block';
+  if (rw2) rw2.style.display = 'none';
+  const mreq = $('mpesa-required-section'); if (mreq) mreq.innerHTML = '';
   
   await refreshShopData(shop);
   _resetting = false; 
@@ -695,13 +734,74 @@ function recalc() {
   const sn = $('s-net'); if (sn) { sn.textContent = 'KES ' + fmt(net); sn.className = 'mcval ' + (net >= 0 ? 'pos' : 'neg'); }
   set('eod-ocash', ocash); set('eod-topup', tT); set('eod-rev', tR); set('eod-exp', tExp); set('eod-net', net);
   checkLowFloat(activeShop, net);
-  doRecon();
   const shopAtCall = activeShop; clearTimeout(recalc._t);
   recalc._t = setTimeout(() => {
     saveInputs(); const d = S.shopData[shopAtCall];
     const has = d && (d.openingCash > 0 || d.expenses.length > 0 || GAMES.some(g => d.games[g] && (d.games[g].open > 0 || d.games[g].close > 0)));
     if (has) saveShopState(shopAtCall);
   }, 1500);
+}
+
+// Called only while the count is still unlocked - saves what's typed so
+// nothing is lost on an interruption, but deliberately does NOT compute
+// or reveal the expected float or the variance. See lockReconCount().
+function onReconInputChanged() {
+  ensureShopDataExists(activeShop);
+  const d = S.shopData[activeShop];
+  if (!d.cashRecon) d.cashRecon = {};
+  d.cashRecon.notes = N($('recon-notes') ? $('recon-notes').value : 0);
+  d.cashRecon.coins = N($('recon-coins') ? $('recon-coins').value : 0);
+  d.cashRecon.mpesa = N($('recon-mpesa') ? $('recon-mpesa').value : 0);
+  d.cashRecon.locked = false;
+  clearTimeout(window._reconSaveT);
+  window._reconSaveT = setTimeout(() => saveShopState(activeShop), 800);
+}
+
+// Blind count: locks in whatever notes/coins/M-Pesa were entered, THEN
+// reveals the expected float and variance. Doing it in this order - not
+// live as the cashier types - is the whole point: nothing on screen can
+// nudge the count toward the "right" answer before it's committed.
+async function lockReconCount() {
+  const nEl = $('recon-notes'), cEl = $('recon-coins'), mEl = $('recon-mpesa');
+  const notes = N(nEl ? nEl.value : 0), coins = N(cEl ? cEl.value : 0), mpesa = N(mEl ? mEl.value : 0);
+  if (!notes && !coins && !mpesa) { alert('Enter your notes, coins and M-Pesa count first.'); return; }
+  const ok = await confirmModal.show('🔒 Lock This Count', 'Once locked, notes/coins/M-Pesa can\'t be changed without an admin recount.\n\nConfirm this is your final physical count?', '🔒 Lock & Reveal', 'var(--gold)', '🎯');
+  if (!ok) return;
+  [nEl, cEl, mEl].forEach(el => { if (el) el.disabled = true; });
+  ensureShopDataExists(activeShop);
+  S.shopData[activeShop].cashRecon = Object.assign(S.shopData[activeShop].cashRecon || {}, {notes, coins, mpesa, locked: true});
+  doRecon();
+  const lv = $('recon-locked-view'), rv = $('recon-revealed-view'), lb = $('recon-lock-btn'), rw = $('recon-recount-wrap');
+  if (lv) lv.style.display = 'none';
+  if (rv) rv.style.display = 'block';
+  if (lb) lb.style.display = 'none';
+  if (rw) rw.style.display = 'block';
+  saveShopState(activeShop);
+  await AuditLog.record('lock', activeShop, 'cashRecon',
+    'unlocked',
+    `Blind count locked: Notes KES ${fmt(notes)}, Coins KES ${fmt(coins)}, M-Pesa KES ${fmt(mpesa)} by ${sess.name}`);
+}
+
+// Admin-only escape hatch for a genuine miscount - reopens the blind
+// count from scratch rather than letting the cashier just edit a
+// revealed number.
+async function unlockReconCount() {
+  if (!sess.isAdmin) { alert('Only an admin can reopen a locked count.'); return; }
+  const ok = await confirmModal.show('Reopen Count', 'This reopens the blind count for a recount, hiding the expected total again.\n\nContinue?', '🔓 Reopen', 'var(--red)', '⚠️');
+  if (!ok) return;
+  const nEl = $('recon-notes'), cEl = $('recon-coins'), mEl = $('recon-mpesa');
+  [nEl, cEl, mEl].forEach(el => { if (el) el.disabled = false; });
+  const lv = $('recon-locked-view'), rv = $('recon-revealed-view'), lb = $('recon-lock-btn'), rw = $('recon-recount-wrap');
+  if (lv) lv.style.display = 'block';
+  if (rv) rv.style.display = 'none';
+  if (lb) lb.style.display = 'block';
+  if (rw) rw.style.display = 'none';
+  const rr = $('recon-result'); if (rr) rr.innerHTML = '';
+  const mreq = $('mpesa-required-section'); if (mreq) mreq.innerHTML = '';
+  ensureShopDataExists(activeShop);
+  if (S.shopData[activeShop].cashRecon) S.shopData[activeShop].cashRecon.locked = false;
+  saveShopState(activeShop);
+  await AuditLog.record('unlock', activeShop, 'cashRecon', 'locked', `Recount reopened by ${sess.name}`);
 }
 
 function doRecon() {
@@ -717,49 +817,51 @@ function doRecon() {
   
   const expenses = (d.expenses || []).reduce((s,e) => s + N(e.amount), 0);
   const expected = opening + gameRev + totalCashAdded - totalCashWithdrawn - expenses, declared = notes + coins + mpesa, diff = declared - expected, ok = Math.abs(diff) < 1;
-  d.cashRecon = {opening, notes, coins, mpesa, gameRev, cashAdded: totalCashAdded, cashWithdrawn: totalCashWithdrawn, expenses, expected, declared, diff, ok};
+  d.cashRecon = Object.assign(d.cashRecon || {}, {opening, notes, coins, mpesa, gameRev, cashAdded: totalCashAdded, cashWithdrawn: totalCashWithdrawn, expenses, expected, declared, diff, ok});
   if (expEl) expEl.textContent = 'KES ' + fmt(expected);
-  const anyFilled = (nEl && nEl.value !== '') || (cEl && cEl.value !== '') || (mEl && mEl.value !== '');
-  if (!anyFilled) { if (diffEl) diffEl.textContent = 'Enter amounts to check'; if (resEl) resEl.innerHTML = ''; return; }
-  if (diffEl && anyFilled) {
+  if (diffEl) {
     diffEl.textContent = ok ? '✅ Balanced' : diff > 0 ? '⚠️ +KES ' + fmt(diff) + ' over' : '⚠️ KES ' + fmt(Math.abs(diff)) + ' short';
     diffEl.style.color = ok ? 'var(--green)' : 'var(--red)';
   }
   if (!resEl) return;
-  if (!anyFilled) { resEl.innerHTML = ''; return; }
   resEl.innerHTML = `<div style="border:1px solid ${ok ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'};border-radius:var(--radius2);overflow:hidden;"><div style="background:${ok ? 'var(--greenl)' : 'var(--redl)'};padding:14px 16px;display:flex;align-items:center;gap:12px;"><span style="font-size:32px;line-height:1;">${ok ? '✅' : '⚠️'}</span><div><div style="font-size:15px;font-weight:700;color:${ok ? 'var(--green)' : 'var(--red)'};">${ok ? 'Balanced — all money accounted for' : diff > 0 ? 'KES ' + fmt(diff) + ' OVER' : 'KES ' + fmt(Math.abs(diff)) + ' SHORT'}</div><div style="font-size:12px;color:var(--txt2);margin-top:3px;">Expected: <b>KES ${fmt(expected)}</b> · Declared: <b>KES ${fmt(declared)}</b></div></div></div></div>`;
   
-  renderMpesaGate(notes, coins);
+  renderMpesaGate(notes, coins, mpesa);
 }
 
-// Shows the required M-Pesa deposit box the moment physical cash (notes
-// + coins) exceeds the shop's threshold. This is not optional - submit
+// Shows the required deposit/transfer box the moment cash + M-Pesa
+// combined exceed the shop's threshold. This is not optional - submit
 // is blocked until a reference code is entered here when it appears.
-function renderMpesaGate(notes, coins) {
+// M-Pesa balance counts toward this too, not just physical cash - it's
+// money sitting outside the bank either way.
+function renderMpesaGate(notes, coins, mpesa) {
   const el = $('mpesa-required-section');
   if (!el) return;
   const physicalCash = notes + coins;
+  const totalExposure = physicalCash + mpesa;
   const threshold = (S.cashThresholds && S.cashThresholds[activeShop]) || 5000;
-  const excess = Math.max(0, physicalCash - threshold);
+  const excess = Math.max(0, totalExposure - threshold);
 
   if (excess <= 0) { el.innerHTML = ''; return; }
 
   const existingRef = el.querySelector('#mpesa-ref-inp') ? el.querySelector('#mpesa-ref-inp').value : '';
   el.innerHTML = `<div class="card" style="background:var(--redl);border:1px solid rgba(239,68,68,0.35);border-radius:var(--radius2);padding:16px;margin-bottom:14px;">
-    <div style="font-size:12px;font-weight:800;color:var(--red);text-transform:uppercase;margin-bottom:10px;">⚠️ Cash Above Threshold — Deposit Required</div>
+    <div style="font-size:12px;font-weight:800;color:var(--red);text-transform:uppercase;margin-bottom:10px;">⚠️ Cash + M-Pesa Above Threshold — Move to Bank</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;font-size:13px;">
-      <div><span style="color:var(--txt3);">Physical Cash:</span><div style="font-weight:700;color:var(--txt);font-size:15px;">KES ${fmt(physicalCash)}</div></div>
+      <div><span style="color:var(--txt3);">Cash (Notes+Coins):</span><div style="font-weight:700;color:var(--txt);font-size:15px;">KES ${fmt(physicalCash)}</div></div>
+      <div><span style="color:var(--txt3);">M-Pesa Balance:</span><div style="font-weight:700;color:var(--txt);font-size:15px;">KES ${fmt(mpesa)}</div></div>
+      <div><span style="color:var(--txt3);">Combined Total:</span><div style="font-weight:700;color:var(--txt);font-size:15px;">KES ${fmt(totalExposure)}</div></div>
       <div><span style="color:var(--txt3);">Threshold:</span><div style="font-weight:700;color:var(--green);font-size:15px;">KES ${fmt(threshold)}</div></div>
     </div>
     <div style="background:var(--bg2);border-radius:6px;padding:10px 12px;margin-bottom:12px;text-align:center;">
-      <div style="font-size:11px;color:var(--txt3);text-transform:uppercase;">Deposit This Amount to the Bank</div>
+      <div style="font-size:11px;color:var(--txt3);text-transform:uppercase;">Move This Amount to the Bank</div>
       <div style="font-size:22px;font-weight:800;color:var(--red);margin-top:2px;">KES ${fmt(excess)}</div>
     </div>
     <div style="margin-bottom:6px;">
-      <label style="display:block;font-size:11px;color:var(--txt3);font-weight:700;text-transform:uppercase;margin-bottom:5px;">📄 M-Pesa Reference Code (required to submit)</label>
-      <input type="text" id="mpesa-ref-inp" value="${existingRef.replace(/"/g,'&quot;')}" placeholder="e.g. ABC123XYZ — from your M-Pesa message" style="width:100%;border:1px solid rgba(239,68,68,0.4);border-radius:6px;padding:10px;font-size:14px;font-weight:700;letter-spacing:0.03em;outline:none;background:var(--bg3);color:var(--txt);text-transform:uppercase;">
+      <label style="display:block;font-size:11px;color:var(--txt3);font-weight:700;text-transform:uppercase;margin-bottom:5px;">📄 Deposit / Transfer Reference (required to submit)</label>
+      <input type="text" id="mpesa-ref-inp" value="${existingRef.replace(/"/g,'&quot;')}" placeholder="M-Pesa deposit code, or bank transfer reference" style="width:100%;border:1px solid rgba(239,68,68,0.4);border-radius:6px;padding:10px;font-size:14px;font-weight:700;letter-spacing:0.03em;outline:none;background:var(--bg3);color:var(--txt);text-transform:uppercase;">
     </div>
-    <div style="font-size:11px;color:var(--txt3);">Deposit the excess at an M-Pesa shop first, then enter the reference code from your confirmation message. Submit will be blocked until this is filled in.</div>
+    <div style="font-size:11px;color:var(--txt3);">Moving physical cash: deposit at an M-Pesa shop and enter that code. Moving M-Pesa balance: transfer to the bank via PayBill and enter that reference instead. Submit is blocked until this is filled in.</div>
   </div>`;
 }
 
@@ -889,6 +991,7 @@ async function submitReport() {
   // whole threshold/deposit system is checked against, so it can't be skipped.
   const notesVal = N($('recon-notes') ? $('recon-notes').value : 0);
   const coinsVal = N($('recon-coins') ? $('recon-coins').value : 0);
+  const mpesaVal = N($('recon-mpesa') ? $('recon-mpesa').value : 0);
   const physicalCash = notesVal + coinsVal;
   if (physicalCash <= 0) {
     alert('⚠️ Validation Error\n\nPlease count and enter your Notes and Coins in Cash Reconciliation before submitting.');
@@ -897,17 +1000,27 @@ async function submitReport() {
     return;
   }
 
-  // If cash is above the shop's threshold, the excess must already be
-  // deposited and its M-Pesa reference entered - submission is blocked
-  // until it is, exactly as required.
+  // The blind count must actually have been locked - typing a number
+  // into the boxes isn't a count on its own; skipping the lock step
+  // would silently defeat the whole point of hiding the expected total.
+  if (!d.cashRecon || !d.cashRecon.locked) {
+    alert('⚠️ Validation Error\n\nPlease lock your cash count in Cash Reconciliation (tap "Lock Count & Reveal Expected") before submitting.');
+    return;
+  }
+
+  // If cash + M-Pesa combined is above the shop's threshold, the excess
+  // must already be moved to the bank and its reference entered -
+  // submission is blocked until it is, exactly as required.
   const threshold = (S.cashThresholds && S.cashThresholds[activeShop]) || 5000;
-  const excessCash = Math.max(0, physicalCash - threshold);
+  const totalExposure = physicalCash + mpesaVal;
+  const totalExcess = Math.max(0, totalExposure - threshold);
+  const physicalExcess = Math.max(0, physicalCash - threshold);
   let mpesaRefForSubmit = '';
-  if (excessCash > 0) {
+  if (totalExcess > 0) {
     const refInp = $('mpesa-ref-inp');
     mpesaRefForSubmit = refInp ? refInp.value.trim() : '';
     if (!mpesaRefForSubmit) {
-      alert(`⚠️ Cash Above Threshold\n\nYour physical cash (KES ${fmt(physicalCash)}) is KES ${fmt(excessCash)} above the KES ${fmt(threshold)} threshold.\n\nDeposit the excess via M-Pesa and enter the reference code before submitting.`);
+      alert(`⚠️ Cash + M-Pesa Above Threshold\n\nYour cash and M-Pesa combined (KES ${fmt(totalExposure)}) is KES ${fmt(totalExcess)} above the KES ${fmt(threshold)} threshold.\n\nMove the excess to the bank and enter the deposit/transfer reference before submitting.`);
       if (refInp) { refInp.focus(); refInp.style.borderColor = 'var(--red)'; setTimeout(() => refInp.style.borderColor = '', 2000); }
       return;
     }
@@ -996,21 +1109,22 @@ async function submitReport() {
     nextDayOpening[g] = {open: cl, close: 0, topups: []};
   });
 
-  // Tomorrow's opening cash: if cash was above threshold, the excess was
-  // required to be deposited (validated above), so only the threshold
-  // remains with the cashier. If cash was at or below threshold, the
-  // full counted amount carries forward untouched.
-  const nextOpeningCash = excessCash > 0 ? threshold : physicalCash;
+  // Tomorrow's opening cash carries the physical till only - M-Pesa
+  // balance isn't sitting in the drawer, so it never affects this. If
+  // physical cash alone was above threshold, the excess was required
+  // to be deposited (validated above), so only the threshold remains
+  // with the cashier; otherwise the full counted amount carries forward.
+  const nextOpeningCash = physicalExcess > 0 ? threshold : physicalCash;
 
-  // If a deposit was required, record it now - atomically with the
-  // submission itself, not as a separate action that could be skipped
-  // or forgotten.
-  if (excessCash > 0) {
+  // If a deposit/transfer was required, record it now - atomically with
+  // the submission itself, not as a separate action that could be
+  // skipped or forgotten.
+  if (totalExcess > 0) {
     const deposit = {
       id: now.getTime() + 1,
       shop: activeShop,
-      amount: excessCash,
-      gross: excessCash,
+      amount: totalExcess,
+      gross: totalExcess,
       fee: 0,
       reference: mpesaRefForSubmit,
       status: 'pending',
@@ -1025,18 +1139,18 @@ async function submitReport() {
       const {error} = await db.from('mpesa_deposits').insert(deposit);
       if (error) throw error;
     } catch(e) {
-      logError('submitReport: mpesa deposit', e, {shop: activeShop, amount: excessCash});
+      logError('submitReport: mpesa deposit', e, {shop: activeShop, amount: totalExcess});
       showWarning('⚠️ Deposit logged locally but could not sync to server.');
     }
     await AuditLog.record('deposit', activeShop, 'mpesa',
       'Required deposit on submission',
-      `KES ${fmt(excessCash)} · Ref: ${mpesaRefForSubmit} · Cash was KES ${fmt(physicalCash)}, threshold KES ${fmt(threshold)}`
+      `KES ${fmt(totalExcess)} · Ref: ${mpesaRefForSubmit} · Cash+M-Pesa was KES ${fmt(totalExposure)} (cash KES ${fmt(physicalCash)}, M-Pesa KES ${fmt(mpesaVal)}), threshold KES ${fmt(threshold)}`
     );
   }
 
   await AuditLog.record('submit', activeShop, 'end-of-day',
     'daily state cleared',
-    `Report #${reportId} by ${sess.name} | Net KES ${fmt(net)} | Revenue KES ${fmt(tR)} | Expenses KES ${fmt(tExp)} | Cash movements KES ${fmt(totalCashAdded - totalCashWithdrawn)} | Next opening cash: KES ${fmt(nextOpeningCash)}${excessCash > 0 ? ' (threshold, KES ' + fmt(excessCash) + ' deposited)' : ' (carried full cash count)'}`
+    `Report #${reportId} by ${sess.name} | Net KES ${fmt(net)} | Revenue KES ${fmt(tR)} | Expenses KES ${fmt(tExp)} | Cash movements KES ${fmt(totalCashAdded - totalCashWithdrawn)} | Next opening cash: KES ${fmt(nextOpeningCash)}${totalExcess > 0 ? ' (threshold, KES ' + fmt(totalExcess) + ' cash+M-Pesa moved to bank)' : ' (carried full cash count)'}`
   );
   
   // ✅ CRITICAL FIX: Clear local data ONLY AFTER all database saves are confirmed
@@ -1071,14 +1185,6 @@ async function submitReport() {
   if ($('pane-history') && $('pane-history').classList.contains('on')) renderHistory();
   setTimeout(() => {
     loadShopData(activeShop);
-    const rn = $('recon-notes'), rc = $('recon-coins'), rm = $('recon-mpesa');
-    const re = $('recon-expected'), rd = $('recon-diff'), rr = $('recon-result');
-    if (rn) rn.value = '';
-    if (rc) rc.value = '';
-    if (rm) rm.value = '';
-    if (re) re.textContent = 'KES 0';
-    if (rd) { rd.textContent = 'Enter amounts to check'; rd.style.color = 'var(--txt3)'; }
-    if (rr) rr.innerHTML = '';
   }, 80);
   checkAutoSummary();
 }
