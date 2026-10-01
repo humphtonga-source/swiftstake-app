@@ -370,6 +370,7 @@ function goTab(tab, el) {
     finance: () => sess.isAdmin
       ? refreshShopData(activeShop).then(() => { renderFinance(); setTimeout(() => loadShopData(activeShop), 80); })
       : renderFinance(),
+    draw: renderDrawPage,
     analytics: setupAnalytics,
     history: renderHistory,
     settings: renderSettings,
