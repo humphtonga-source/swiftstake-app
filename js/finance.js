@@ -935,8 +935,23 @@ async function closingFloatConfirm(game, value) {
 
 async function submitReport() {
   saveInputs();
-  ensureShopDataExists(activeShop);
-  const d = S.shopData[activeShop];
+  // 🛡️ RACE-CONDITION FIX (Oct 2 incident): this function awaits a
+  // confirm dialog, a database insert, and several more async steps
+  // before it finally resets the shop's state for the next day. The
+  // whole function used to read the shared global `activeShop` at each
+  // of those points - so if the admin switched to a different shop tab
+  // (or opened Draw/M-Pesa) while a submission was still in flight, the
+  // LATER steps (the next-day reset in particular) would silently apply
+  // to whatever shop the admin had switched to, not the one actually
+  // being submitted. That's what made Nyeri's submitted report look
+  // like it "didn't submit" / "kept the old data" - the report itself
+  // saved fine, but the reset landed on a different shop entirely.
+  // Capturing the shop ONCE here, and using only this captured value for
+  // every data-writing step below, makes the rest of this function
+  // immune to the admin navigating elsewhere mid-submission.
+  const submittingShop = activeShop;
+  ensureShopDataExists(submittingShop);
+  const d = S.shopData[submittingShop];
   
   // Validation before showing confirmation
   const ocash = N(d.openingCash);
@@ -1011,7 +1026,7 @@ async function submitReport() {
   // If cash + M-Pesa combined is above the shop's threshold, the excess
   // must already be moved to the bank and its reference entered -
   // submission is blocked until it is, exactly as required.
-  const threshold = (S.cashThresholds && S.cashThresholds[activeShop]) || 5000;
+  const threshold = (S.cashThresholds && S.cashThresholds[submittingShop]) || 5000;
   const totalExposure = physicalCash + mpesaVal;
   const totalExcess = Math.max(0, totalExposure - threshold);
   const physicalExcess = Math.max(0, physicalCash - threshold);
@@ -1027,7 +1042,7 @@ async function submitReport() {
   }
   
   // All validation passed, show confirmation
-  const ok = await confirmModal.show('Submit End of Day', 'Submit the report for ' + activeShop + '? This saves it to history.', '✅ Submit', 'var(--green)', '📋');
+  const ok = await confirmModal.show('Submit End of Day', 'Submit the report for ' + submittingShop + '? This saves it to history.', '✅ Submit', 'var(--green)', '📋');
   if (!ok) return;
   
   const now = new Date();
@@ -1057,7 +1072,7 @@ async function submitReport() {
   let dbError = null;
   try { 
     const {error} = await db.from('reports').insert({
-      id:reportId, shop:activeShop, date:dateStr, time:timeStr, by_name:sess.name, 
+      id:reportId, shop:submittingShop, date:dateStr, time:timeStr, by_name:sess.name, 
       games:gs, expenses, cash_movements: cashMov, cash_recon:d.cashRecon||null, 
       totals:{openingCash:ocash_val, topup:tT, cashAdded: totalCashAdded, cashWithdrawn: totalCashWithdrawn, revenue:tR, expenses:tExp, net}
     }); 
@@ -1065,7 +1080,7 @@ async function submitReport() {
     dbSaved = true;
   } catch(e) {
     dbError = e;
-    logError('submitReport: database save FAILED', e, {shop: activeShop, reportId});
+    logError('submitReport: database save FAILED', e, {shop: submittingShop, reportId});
     // DO NOT PROCEED - data must be saved before clearing
     const ok = await confirmModal.show('⚠️ Sync Failed', 
       'Report could not sync to server:\n\n' + (e.message || 'Network error') + '\n\nPlease check your connection and try again. Your data is safe locally.',
@@ -1077,7 +1092,7 @@ async function submitReport() {
     // User wants to retry - try once more
     try {
       const {error: retryError} = await db.from('reports').insert({
-        id:reportId, shop:activeShop, date:dateStr, time:timeStr, by_name:sess.name, 
+        id:reportId, shop:submittingShop, date:dateStr, time:timeStr, by_name:sess.name, 
         games:gs, expenses, cash_movements: cashMov, cash_recon:d.cashRecon||null, 
         totals:{openingCash:ocash_val, topup:tT, cashAdded: totalCashAdded, cashWithdrawn: totalCashWithdrawn, revenue:tR, expenses:tExp, net}
       });
@@ -1085,21 +1100,21 @@ async function submitReport() {
       dbSaved = true;
       dbError = null;
     } catch(retryE) {
-      logError('submitReport: retry also failed', retryE, {shop: activeShop, reportId});
+      logError('submitReport: retry also failed', retryE, {shop: submittingShop, reportId});
       alert('❌ Sync failed after retry. Your data is saved locally and will sync when connection is restored.');
       return;
     }
   }
   
   if (!dbSaved) {
-    logError('submitReport: database save never succeeded', dbError, {shop: activeShop, reportId});
+    logError('submitReport: database save never succeeded', dbError, {shop: submittingShop, reportId});
     return;
   }
   
   // ✅ CRITICAL FIX: Save report to in-memory S.reports BEFORE clearing shop data
   // This is our backup in case DB is out of sync
   if (!S.reports) S.reports = [];
-  S.reports.unshift({id:reportId, shop:activeShop, date:dateStr, time:timeStr, by:sess.name, games:gs, expenses, cashMovements: cashMov, cashRecon:d.cashRecon||null, totals:{openingCash:ocash_val, topup:tT, cashAdded: totalCashAdded, cashWithdrawn: totalCashWithdrawn, revenue:tR, expenses:tExp, net}});
+  S.reports.unshift({id:reportId, shop:submittingShop, date:dateStr, time:timeStr, by:sess.name, games:gs, expenses, cashMovements: cashMov, cashRecon:d.cashRecon||null, totals:{openingCash:ocash_val, topup:tT, cashAdded: totalCashAdded, cashWithdrawn: totalCashWithdrawn, revenue:tR, expenses:tExp, net}});
   
   // ✅ FEATURE: Carry over closing float as next opening float
   const nextDayOpening = {};
@@ -1122,7 +1137,7 @@ async function submitReport() {
   if (totalExcess > 0) {
     const deposit = {
       id: now.getTime() + 1,
-      shop: activeShop,
+      shop: submittingShop,
       amount: totalExcess,
       gross: totalExcess,
       fee: 0,
@@ -1139,16 +1154,16 @@ async function submitReport() {
       const {error} = await db.from('mpesa_deposits').insert(deposit);
       if (error) throw error;
     } catch(e) {
-      logError('submitReport: mpesa deposit', e, {shop: activeShop, amount: totalExcess});
+      logError('submitReport: mpesa deposit', e, {shop: submittingShop, amount: totalExcess});
       showWarning('⚠️ Deposit logged locally but could not sync to server.');
     }
-    await AuditLog.record('deposit', activeShop, 'mpesa',
+    await AuditLog.record('deposit', submittingShop, 'mpesa',
       'Required deposit on submission',
       `KES ${fmt(totalExcess)} · Ref: ${mpesaRefForSubmit} · Cash+M-Pesa was KES ${fmt(totalExposure)} (cash KES ${fmt(physicalCash)}, M-Pesa KES ${fmt(mpesaVal)}), threshold KES ${fmt(threshold)}`
     );
   }
 
-  await AuditLog.record('submit', activeShop, 'end-of-day',
+  await AuditLog.record('submit', submittingShop, 'end-of-day',
     'daily state cleared',
     `Report #${reportId} by ${sess.name} | Net KES ${fmt(net)} | Revenue KES ${fmt(tR)} | Expenses KES ${fmt(tExp)} | Cash movements KES ${fmt(totalCashAdded - totalCashWithdrawn)} | Next opening cash: KES ${fmt(nextOpeningCash)}${totalExcess > 0 ? ' (threshold, KES ' + fmt(totalExcess) + ' cash+M-Pesa moved to bank)' : ' (carried full cash count)'}`
   );
@@ -1168,18 +1183,18 @@ async function submitReport() {
     submittedAt: new Date().toISOString(), 
     submittedBy: sess.name
   };
-  S.shopData[activeShop] = nextShopState;
+  S.shopData[submittingShop] = nextShopState;
   
   // Save the next day state to database immediately
   try {
-    await saveShopState(activeShop, true);
+    await saveShopState(submittingShop, true);
   } catch(saveErr) {
-    logError('submitReport: failed to save next day state', saveErr, {shop: activeShop});
+    logError('submitReport: failed to save next day state', saveErr, {shop: submittingShop});
     // Still continue - the reset has happened in memory and DB will catch up
   }
   
-  pushNotif('✅ Report submitted', activeShop + ' · Net KES ' + fmt(net));
-  alert('✅ Report submitted!\nShop: ' + activeShop + '\nNet: KES ' + fmt(net));
+  pushNotif('✅ Report submitted', submittingShop + ' · Net KES ' + fmt(net));
+  alert('✅ Report submitted!\nShop: ' + submittingShop + '\nNet: KES ' + fmt(net));
   _resetting = false;
   renderFinance();
   if ($('pane-history') && $('pane-history').classList.contains('on')) renderHistory();
