@@ -457,7 +457,87 @@ function renderSettings() {
     </div>`;
 }
 
-async function saveShopName(i) { const inp = $('shopname-inp-' + i); if (!inp) return; const newName = inp.value.trim(), oldName = S.shops[i].name; if (!newName) { alert('Shop name cannot be empty.'); return; } if (newName === oldName) { $('shopname-display-' + i).style.display = ''; $('shopname-inp-' + i).style.display = 'none'; $('edit-btn-' + i).style.display = ''; $('save-btn-' + i).style.display = 'none'; return; } if (SHOPS.includes(newName)) { alert('A shop with that name already exists.'); return; } const msg = $('shopmsg'); if (msg) { msg.textContent = '⏳ Saving...'; msg.className = ''; } try { await db.from('shops').eq('id', S.shops[i].id).update({name:newName}); await db.from('shop_state').eq('shop', oldName).update({shop:newName}); S.shops[i].name = newName; const idx = SHOPS.indexOf(oldName); if (idx > -1) SHOPS[idx] = newName; if (S.shopData[oldName]) { S.shopData[newName] = S.shopData[oldName]; delete S.shopData[oldName]; } if (activeShop === oldName) activeShop = newName; if (msg) { msg.textContent = '✅ Renamed to ' + newName; msg.className = 'succ'; } renderSettings(); setTimeout(() => { const m = $('shopmsg'); if (m) m.textContent = ''; }, 3500); } catch(e) { if (msg) { msg.textContent = '❌ Error renaming.'; msg.className = 'fail'; } } }
+// Every table that stores a shop by name, kept in one place so a rename
+// can never again leave history stranded under the old name. This is
+// the direct fix for the Kiawara/KIAWARA SHOP and NYERI SHOP/"Nyeri shop
+// 2" splits - this function used to update only `shops` and
+// `shop_state`, so every other table silently kept the old name forever.
+const SHOP_NAME_TABLES = [
+  'reports', 'shop_state', 'audit_log', 'cash_thresholds', 'mpesa_shop_config',
+  'mpesa_deposits', 'bank_withdrawals', 'equipment', 'banks', 'draw_promos', 'shop_debts'
+];
+
+async function saveShopName(i) {
+  const inp = $('shopname-inp-' + i); if (!inp) return;
+  const newName = inp.value.trim(), oldName = S.shops[i].name;
+  if (!newName) { alert('Shop name cannot be empty.'); return; }
+  if (newName === oldName) {
+    $('shopname-display-' + i).style.display = ''; $('shopname-inp-' + i).style.display = 'none';
+    $('edit-btn-' + i).style.display = ''; $('save-btn-' + i).style.display = 'none';
+    return;
+  }
+  if (SHOPS.includes(newName)) { alert('A shop with that name already exists.'); return; }
+
+  const ok = await confirmModal.show('✏️ Rename Shop',
+    `Rename "${oldName}" to "${newName}"?\n\nThis updates every record that references this shop (reports, finance state, M-Pesa config, draws, and more) in one go, so nothing is left behind under the old name.`,
+    '✅ Rename Everywhere', 'var(--gold)', '✏️');
+  if (!ok) return;
+
+  const msg = $('shopmsg'); if (msg) { msg.textContent = '⏳ Renaming everywhere - this touches every table, please wait...'; msg.className = ''; }
+  const failedTables = [];
+  try {
+    const {error: shopErr} = await db.from('shops').eq('id', S.shops[i].id).update({name: newName});
+    if (shopErr) throw shopErr;
+
+    // Each table is updated independently and its own failure is tracked
+    // rather than aborting the whole rename - a partial rename (reported
+    // at the end) is far easier to finish by hand than an aborted one
+    // where you don't know which tables already changed.
+    for (const table of SHOP_NAME_TABLES) {
+      try {
+        const {error} = await db.from(table).eq('shop', oldName).update({shop: newName});
+        if (error) throw error;
+      } catch(tErr) {
+        logError('saveShopName: ' + table, tErr, {oldName, newName});
+        failedTables.push(table);
+      }
+    }
+
+    // staff.shop is a plain name field (used when a cashier is tied to one
+    // shop rather than 'All') - rename it here too so a future cashier
+    // assignment doesn't silently point at a name that no longer exists.
+    try {
+      const {error} = await db.from('staff').eq('shop', oldName).update({shop: newName});
+      if (error) throw error;
+    } catch(tErr) {
+      logError('saveShopName: staff', tErr, {oldName, newName});
+      failedTables.push('staff');
+    }
+
+    S.shops[i].name = newName;
+    const idx = SHOPS.indexOf(oldName); if (idx > -1) SHOPS[idx] = newName;
+    if (S.shopData[oldName]) { S.shopData[newName] = S.shopData[oldName]; delete S.shopData[oldName]; }
+    if (activeShop === oldName) activeShop = newName;
+
+    await AuditLog.record('update', newName, 'shop-name', oldName,
+      `Renamed "${oldName}" to "${newName}" by ${sess.name}` + (failedTables.length ? ` | FAILED on: ${failedTables.join(', ')} - needs manual follow-up` : ''));
+
+    if (msg) {
+      if (failedTables.length) {
+        msg.textContent = '⚠️ Renamed, but ' + failedTables.join(', ') + ' failed - check the audit log.';
+        msg.className = 'fail';
+      } else {
+        msg.textContent = '✅ Renamed everywhere to ' + newName;
+        msg.className = 'succ';
+      }
+    }
+    renderSettings();
+    setTimeout(() => { const m = $('shopmsg'); if (m) m.textContent = ''; }, 5000);
+  } catch(e) {
+    logError('saveShopName', e, {oldName, newName});
+    if (msg) { msg.textContent = '❌ Error renaming shop record itself - nothing was changed.'; msg.className = 'fail'; }
+  }
+}
 async function addShop() { const inp = $('new-shop-name'), msg = $('shopmsg'), name = inp ? inp.value.trim() : ''; if (!name) { if (msg) { msg.textContent = '⚠️ Enter a shop name.'; msg.className = 'fail'; } return; } if (SHOPS.map(s => s.toLowerCase()).includes(name.toLowerCase())) { if (msg) { msg.textContent = '⚠️ Shop already exists.'; msg.className = 'fail'; } return; } if (msg) { msg.textContent = '⏳ Creating...'; msg.className = ''; } try { const {error} = await db.from('shops').insert({name}); if (error) throw new Error(error.message); const {data:f} = await db.from('shops').select('id,name').eq('name', name).limit(1); const ns = f && f[0] ? JSON.parse(JSON.stringify(f[0])) : {id:Date.now(), name}; S.shops.push(ns); SHOPS.push(name); S.shopData[name] = {games:{stellar:{open:0,close:0,topups:[]},pilot:{open:0,close:0,topups:[]},spin:{open:0,close:0,topups:[]}}, expenses:[], openingCash:0, cashRecon:null}; await db.from('shop_state').insert({shop:name, games:{stellar:{open:0,close:0,topups:[]},pilot:{open:0,close:0,topups:[]},spin:{open:0,close:0,topups:[]}}, expenses:[], opening_cash:0, cash_recon:null, cash_movements:[], updated_at:new Date().toISOString()}); const {data:nb} = await db.from('banks').insert({name:name + ' Bank Account', amount:0, shop:name}); if (nb && nb[0]) S.banks.push(JSON.parse(JSON.stringify(nb[0]))); if (inp) inp.value = ''; if (msg) { msg.textContent = '✅ "' + name + '" created!'; msg.className = 'succ'; } renderSettings(); setTimeout(() => { const m = $('shopmsg'); if (m) m.textContent = ''; }, 3500); } catch(e) { if (msg) { msg.textContent = '❌ ' + e.message; msg.className = 'fail'; } } }
 async function deleteShop(i) { const sh = S.shops[i]; if (!sh) return; const ok = await confirmModal.show('Delete Shop', 'Delete "' + sh.name + '"? Historical reports are kept.', '🗑️ Delete', 'var(--red)', '⚠️'); if (!ok) return; const msg = $('shopmsg'); if (msg) { msg.textContent = '⏳ Deleting...'; msg.className = ''; } try { await db.from('shops').eq('id', sh.id).delete(); await db.from('shop_state').eq('shop', sh.name).delete(); S.shops.splice(i, 1); const idx = SHOPS.indexOf(sh.name); if (idx > -1) SHOPS.splice(idx, 1); delete S.shopData[sh.name]; if (activeShop === sh.name) activeShop = SHOPS[0] || ''; if (msg) { msg.textContent = '✅ Deleted.'; msg.className = 'succ'; } renderSettings(); setTimeout(() => { const m = $('shopmsg'); if (m) m.textContent = ''; }, 3500); } catch(e) { if (msg) { msg.textContent = '❌ ' + e.message; msg.className = 'fail'; } } }
 async function togglePerm(i, k, v) {
