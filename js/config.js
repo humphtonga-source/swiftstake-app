@@ -7,6 +7,10 @@ let GAMES = ['stellar','pilot','spin'];
 const COLORS = ['#3b82f6','#f59e0b','#22c55e','#a855f7','#ef4444'];
 const DEFPERMS  = {chat:true,finance:true,analytics:true,history:true,planning:true};
 const ADMINPERMS = {chat:true,finance:true,analytics:true,history:true,planning:true,banking:true,roadmap:true,settings:true,turnover:true,aisummary:true};
+// A manager's perms are the same as a cashier's for their own work - what
+// makes them a manager is the role itself plus their `shops` allocation
+// (checked directly via sess.role/sess.shops), not an extra perms flag.
+const MANAGERPERMS = {chat:true,finance:true,analytics:true,history:true,planning:true};
 
 const $ = id => document.getElementById(id);
 const N = v => { const n = parseFloat(v); return isNaN(n) ? 0 : n; };
