@@ -263,7 +263,13 @@ async function doLogin() {
 
   if (selRole_ === 'admin' && m.role !== 'admin') { showErr('You are not registered as an administrator.'); clrPins(); return; }
   if (selRole_ === 'cashier' && m.role === 'admin') { showErr('Administrators must sign in using the Admin option.'); clrPins(); return; }
-  sess = {role:m.role, name:m.name, shop:m.shop === 'All' ? shop : m.shop, perms:{...m.perms}, isAdmin:m.role === 'admin'};
+  // `shops` is the manager role's allocated-shop list (empty/ignored for
+  // plain cashiers and admins) - see setupNav() and the Settings pane
+  // for where this actually changes behaviour.
+  sess = {role:m.role, name:m.name, shop:m.shop === 'All' ? shop : m.shop, shops:m.shops || [], perms:{...m.perms}, isAdmin:m.role === 'admin'};
+  if (sess.role === 'manager' && sess.shops.length && !sess.shops.includes(sess.shop)) {
+    sess.shop = sess.shops[0];
+  }
   activeShop = sess.isAdmin ? SHOPS[0] : sess.shop;
   
   // Save session to localStorage for persistence. The token is saved
@@ -326,6 +332,13 @@ function setupNav() {
     if (!sess.perms.analytics) $('nav-analytics').style.display = 'none';
     if (!sess.perms.history)   $('nav-history').style.display   = 'none';
     if (!sess.perms.planning)  $('nav-planning').style.display  = 'none';
+    // A manager isn't an admin, but still needs Settings - scoped there
+    // to just their own allocated shops' staff and report approvals.
+    // renderSettings() itself hides everything admin-only (shop
+    // management, cash thresholds, the danger zone) for this role.
+    if (sess.role === 'manager') {
+      const ns = $('nav-settings'); if (ns) ns.style.display = 'flex';
+    }
   }
   const ps = $('proj-shop');
   if (ps) ps.innerHTML = SHOPS.map(s => `<option value="${s}">${s}</option>`).join('');
