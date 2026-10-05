@@ -382,15 +382,82 @@ function toggleSumHist(i) { const el = $('sh-' + i); if (el) el.style.display = 
 function checkAutoSummary() { const today = new Date().toDateString(); const todayRpts = S.reports.filter(r => new Date(r.id).toDateString() === today); const covered = new Set(todayRpts.map(r => r.shop)); if (covered.size >= SHOPS.length) { pushNotif('📊 All shops submitted!', 'Auto-generating daily AI summary...'); activeSummaryPeriod = 'daily'; setTimeout(() => { if (sess.isAdmin) generateSummary(); }, 1500); } }
 
 // ── SETTINGS ──
+// For admin, shows every staff member. For a manager, shows only the
+// cashiers assigned to their own allocated shops - never other
+// managers, never admins, never cashiers outside their shops. This is
+// what keeps "give rights to his cashiers" from ever turning into
+// "give rights to anyone."
 function buildStaffTable() {
-  if (!S.staff.length) return '<div style="font-size:13px;color:var(--txt3);padding:8px 0;">No staff added yet.</div>';
+  const isManagerView = sess.role === 'manager' && !sess.isAdmin;
+  const rows = S.staff
+    .map((s, i) => ({s, i}))
+    .filter(({s}) => !isManagerView || (s.role === 'cashier' && sess.shops.includes(s.shop)));
+
+  if (!rows.length) return '<div style="font-size:13px;color:var(--txt3);padding:8px 0;">No staff ' + (isManagerView ? 'in your shops ' : '') + 'added yet.</div>';
   let tbl = '<div style="overflow-x:auto;"><table class="stftbl"><thead><tr><th>Name</th><th>Shop</th><th>Role</th><th>Chat</th><th>Finance</th><th>Analytics</th><th>History</th><th>Planning</th><th></th></tr></thead><tbody>';
-  S.staff.forEach((s,i) => {
+  rows.forEach(({s, i}) => {
     const pr = s.perms || {}, dis = s.role === 'admin' ? 'disabled' : '';
     const cb = k => `<td style="text-align:center;"><label class="perm-toggle ${dis ? 'perm-toggle-disabled' : ''}"><input type="checkbox" ${pr[k] ? 'checked' : ''} onchange="togglePerm(${i},'${k}',this.checked)" ${dis}><span class="perm-toggle-track"><span class="perm-toggle-thumb"></span></span></label></td>`;
-    tbl += `<tr><td style="color:var(--txt);font-weight:600;">${s.name}</td><td><span class="tag tag-gold">${s.shop}</span></td><td><span class="tag ${s.role === 'admin' ? 'tag-blue' : 'tag-green'}">${s.role}</span></td>${cb('chat')}${cb('finance')}${cb('analytics')}${cb('history')}${cb('planning')}<td>${sess.name !== s.name ? `<button class="rmbtn" onclick="removeStaff(${i})">Remove</button>` : '<span style="font-size:10px;color:var(--txt3);">You</span>'}</td></tr>`;
+    const canRemove = !isManagerView && sess.name !== s.name;
+    tbl += `<tr><td style="color:var(--txt);font-weight:600;">${s.name}</td><td><span class="tag tag-gold">${s.shop}</span></td><td><span class="tag ${s.role === 'admin' ? 'tag-blue' : s.role === 'manager' ? 'tag-gold' : 'tag-green'}">${s.role}</span></td>${cb('chat')}${cb('finance')}${cb('analytics')}${cb('history')}${cb('planning')}<td>${canRemove ? `<button class="rmbtn" onclick="removeStaff(${i})">Remove</button>` : '<span style="font-size:10px;color:var(--txt3);">—</span>'}</td></tr>`;
   });
   tbl += '</tbody></table></div>'; return tbl;
+}
+
+// Reports awaiting a manager's confirmation before they're considered
+// finalised. Admin sees the same list across ALL shops (read-only
+// awareness of the chain - admin can always see full figures regardless
+// of where a report sits in this flow); a manager sees only their own
+// shops' pending reports, with the power to approve them.
+function buildReportApprovals() {
+  const isManagerView = sess.role === 'manager' && !sess.isAdmin;
+  // Bulk-loaded reports may come back snake_case (straight from the DB
+  // column) rather than the camelCase submitReport() uses for a
+  // same-session push - checked defensively so this works either way.
+  const statusOf = r => r.approvalStatus || r.approval_status || 'submitted';
+  const approverOf = r => r.approvedBy || r.approved_by;
+  const relevant = (S.reports || []).filter(r =>
+    (r.totals ? true : false) && (isManagerView ? sess.shops.includes(r.shop) : true)
+  );
+  const pending = relevant.filter(r => statusOf(r) === 'submitted');
+  const approved = relevant.filter(r => statusOf(r) === 'manager_approved').slice(0, 5);
+
+  if (!pending.length && !approved.length) {
+    return '<div style="font-size:13px;color:var(--txt3);padding:8px 0;">No reports to show yet.</div>';
+  }
+  let html = '';
+  if (pending.length) {
+    html += pending.map(r => `<div class="card" style="margin-bottom:8px;padding:12px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <span style="font-size:13px;"><b>${r.shop}</b> · ${r.date || ''} · Net KES ${fmt(N(r.totals && r.totals.net))}</span>
+        <span class="tag tag-gold">⏳ Pending</span>
+      </div>
+      ${isManagerView ? `<button onclick="approveReport(${r.id})" style="margin-top:8px;width:100%;padding:7px;border:none;border-radius:6px;background:var(--green);color:#fff;font-size:12px;font-weight:700;cursor:pointer;">✅ Approve</button>` : ''}
+    </div>`).join('');
+  }
+  if (approved.length) {
+    html += '<div style="font-size:11px;color:var(--txt3);text-transform:uppercase;margin:10px 0 6px;">Recently approved</div>' +
+      approved.map(r => `<div style="font-size:12px;color:var(--txt2);padding:6px 0;border-bottom:1px solid var(--border);">${r.shop} · ${r.date || ''} · approved by ${approverOf(r) || '?'}</div>`).join('');
+  }
+  return html;
+}
+
+async function approveReport(reportId) {
+  if (sess.role !== 'manager' && !sess.isAdmin) return;
+  const r = (S.reports || []).find(x => x.id === reportId);
+  if (r && sess.role === 'manager' && !sess.shops.includes(r.shop)) { alert('That report is not in one of your shops.'); return; }
+  const ok = await confirmModal.show('✅ Approve Report', 'Approve this report as reviewed?', '✅ Approve', 'var(--green)', '📋');
+  if (!ok) return;
+  try {
+    const {error} = await db.from('reports').eq('id', reportId).update({approval_status: 'manager_approved', approved_by: sess.name, approved_at: new Date().toISOString()});
+    if (error) throw error;
+    if (r) { r.approvalStatus = 'manager_approved'; r.approvedBy = sess.name; }
+    await AuditLog.record('update', r ? r.shop : '', 'report-approval', 'submitted', `Report approved by ${sess.name}`);
+    renderSettings();
+  } catch(e) {
+    logError('approveReport', e, {reportId});
+    alert('⚠️ Could not approve. Please try again.');
+  }
 }
 
 function buildShopOptions() { return SHOPS.map(s => `<option value="${s}">${s}</option>`).join(''); }
@@ -403,6 +470,7 @@ function startEditShop(i) { $('shopname-display-' + i).style.display = 'none'; $
 
 function renderSettings() {
   const p = $('pane-settings'); if (!p) return;
+  const isManagerView = sess.role === 'manager' && !sess.isAdmin;
   const shopHtml = sess.isAdmin ? `<div class="card" style="margin-bottom:14px;"><div class="cardtitle">🏪 Shop Management</div><div id="shop-list-wrap">${buildShopList()}</div><div class="addshoprow"><input id="new-shop-name" placeholder="New shop name" type="text" maxlength="40"><button onclick="addShop()">+ Create</button></div><div id="shopmsg" style="margin-top:8px;font-size:13px;"></div></div>` : '';
   
   const cashThresholdHtml = sess.isAdmin ? `<div class="card" style="margin-bottom:14px;"><div class="cardtitle">💰 Cash Float Thresholds (M-Pesa Deposits)</div>
@@ -432,20 +500,42 @@ function renderSettings() {
     <button onclick="manualArchiveThisMonth()" style="width:100%;padding:10px;background:var(--surface2);color:var(--txt);border:1px solid var(--border2);border-radius:4px;font-size:12px;font-weight:700;cursor:pointer;">📦 Archive This Month's Totals Now</button>
   </div>` : '';
 
+  // A manager only ever sees/creates cashiers, and only within their own
+  // allocated shops - the role dropdown is simply omitted for them
+  // (addStaff() also enforces this server-call-side, not just in the UI).
+  const staffShopOptions = isManagerView
+    ? sess.shops.map(s => `<option value="${s}">${s}</option>`).join('')
+    : `${buildShopOptions()}<option value="All">All shops</option>`;
+  const staffRoleField = isManagerView
+    ? `<input type="hidden" id="auth-role" value="cashier">`
+    : `<select id="auth-role" onchange="toggleManagerShopPicker()" style="background:var(--bg2);color:var(--txt);"><option value="cashier">Cashier</option><option value="manager">Manager</option><option value="admin">Admin</option></select>`;
+  // Only shown to admin, only matters when "Manager" is picked above -
+  // collects which shops a new manager is allocated.
+  const managerShopPicker = sess.isAdmin ? `<div id="manager-shops-picker" style="display:none;margin-top:10px;padding:10px;background:var(--bg2);border-radius:var(--radius2);">
+    <div style="font-size:12px;color:var(--txt3);margin-bottom:8px;">Shops this manager will cover:</div>
+    ${SHOPS.map(s => `<label style="display:inline-flex;align-items:center;gap:6px;margin:4px 10px 4px 0;font-size:13px;"><input type="checkbox" class="mgr-shop-cb" value="${s}"> ${s}</label>`).join('')}
+  </div>` : '';
+
+  const staffCard = (sess.isAdmin || isManagerView) ? `<div class="card" style="margin-bottom:14px;"><div class="cardtitle">👥 Staff & Permissions${isManagerView ? ' — your shops' : ''}</div><div id="staff-tbl-wrap">${buildStaffTable()}</div>
+      <div class="addstaffgrid">
+        <input id="auth-name" placeholder="Full name" type="text">
+        <select id="auth-shop" style="background:var(--bg2);color:var(--txt);">${staffShopOptions}</select>
+        <input id="auth-pin" placeholder="PIN (4 digits)" type="password" maxlength="4" inputmode="numeric">
+        ${staffRoleField}
+        <button onclick="addStaff()">Add Staff Member</button>
+      </div>
+      ${managerShopPicker}
+      <div id="staffmsg" style="margin-top:8px;font-size:13px;"></div>
+    </div>` : '';
+
+  const approvalsCard = (sess.isAdmin || isManagerView) ? `<div class="card" style="margin-bottom:14px;"><div class="cardtitle">📋 Report Approvals${isManagerView ? '' : ' (all shops)'}</div><div id="approvals-wrap">${buildReportApprovals()}</div></div>` : '';
+
   p.innerHTML = `<div class="ph"><div class="ph-icon">⚙️</div><h2>Settings</h2></div>
     ${shopHtml}
     ${cashThresholdHtml}
     ${dangerZoneHtml}
-    <div class="card" style="margin-bottom:14px;"><div class="cardtitle">👥 Staff & Permissions</div><div id="staff-tbl-wrap">${buildStaffTable()}</div>
-      <div class="addstaffgrid">
-        <input id="auth-name" placeholder="Full name" type="text">
-        <select id="auth-shop" style="background:var(--bg2);color:var(--txt);">${buildShopOptions()}<option value="All">All shops</option></select>
-        <input id="auth-pin" placeholder="PIN (4 digits)" type="password" maxlength="4" inputmode="numeric">
-        <select id="auth-role" style="background:var(--bg2);color:var(--txt);"><option value="cashier">Cashier</option><option value="admin">Admin</option></select>
-        <button onclick="addStaff()">Add Staff Member</button>
-      </div>
-      <div id="staffmsg" style="margin-top:8px;font-size:13px;"></div>
-    </div>
+    ${staffCard}
+    ${approvalsCard}
     <div class="card"><div class="cardtitle">🔑 Change Your PIN</div>
       <div style="display:grid;gap:10px;max-width:300px;margin-bottom:14px;">
         <div><label class="fl-lbl">Current PIN</label><input type="password" class="fl-inp" id="cur-pin" maxlength="4" inputmode="numeric"></div>
@@ -541,6 +631,14 @@ async function saveShopName(i) {
 async function addShop() { const inp = $('new-shop-name'), msg = $('shopmsg'), name = inp ? inp.value.trim() : ''; if (!name) { if (msg) { msg.textContent = '⚠️ Enter a shop name.'; msg.className = 'fail'; } return; } if (SHOPS.map(s => s.toLowerCase()).includes(name.toLowerCase())) { if (msg) { msg.textContent = '⚠️ Shop already exists.'; msg.className = 'fail'; } return; } if (msg) { msg.textContent = '⏳ Creating...'; msg.className = ''; } try { const {error} = await db.from('shops').insert({name}); if (error) throw new Error(error.message); const {data:f} = await db.from('shops').select('id,name').eq('name', name).limit(1); const ns = f && f[0] ? JSON.parse(JSON.stringify(f[0])) : {id:Date.now(), name}; S.shops.push(ns); SHOPS.push(name); S.shopData[name] = {games:{stellar:{open:0,close:0,topups:[]},pilot:{open:0,close:0,topups:[]},spin:{open:0,close:0,topups:[]}}, expenses:[], openingCash:0, cashRecon:null}; await db.from('shop_state').insert({shop:name, games:{stellar:{open:0,close:0,topups:[]},pilot:{open:0,close:0,topups:[]},spin:{open:0,close:0,topups:[]}}, expenses:[], opening_cash:0, cash_recon:null, cash_movements:[], updated_at:new Date().toISOString()}); const {data:nb} = await db.from('banks').insert({name:name + ' Bank Account', amount:0, shop:name}); if (nb && nb[0]) S.banks.push(JSON.parse(JSON.stringify(nb[0]))); if (inp) inp.value = ''; if (msg) { msg.textContent = '✅ "' + name + '" created!'; msg.className = 'succ'; } renderSettings(); setTimeout(() => { const m = $('shopmsg'); if (m) m.textContent = ''; }, 3500); } catch(e) { if (msg) { msg.textContent = '❌ ' + e.message; msg.className = 'fail'; } } }
 async function deleteShop(i) { const sh = S.shops[i]; if (!sh) return; const ok = await confirmModal.show('Delete Shop', 'Delete "' + sh.name + '"? Historical reports are kept.', '🗑️ Delete', 'var(--red)', '⚠️'); if (!ok) return; const msg = $('shopmsg'); if (msg) { msg.textContent = '⏳ Deleting...'; msg.className = ''; } try { await db.from('shops').eq('id', sh.id).delete(); await db.from('shop_state').eq('shop', sh.name).delete(); S.shops.splice(i, 1); const idx = SHOPS.indexOf(sh.name); if (idx > -1) SHOPS.splice(idx, 1); delete S.shopData[sh.name]; if (activeShop === sh.name) activeShop = SHOPS[0] || ''; if (msg) { msg.textContent = '✅ Deleted.'; msg.className = 'succ'; } renderSettings(); setTimeout(() => { const m = $('shopmsg'); if (m) m.textContent = ''; }, 3500); } catch(e) { if (msg) { msg.textContent = '❌ ' + e.message; msg.className = 'fail'; } } }
 async function togglePerm(i, k, v) {
+  const target = S.staff[i];
+  // A manager may only ever touch a cashier inside their own allocated
+  // shops - checked here too, not just by what buildStaffTable() shows,
+  // in case this is ever called directly.
+  if (sess.role === 'manager' && !sess.isAdmin && (target.role !== 'cashier' || !sess.shops.includes(target.shop))) {
+    alert('You can only manage permissions for cashiers in your own shops.');
+    return;
+  }
   S.staff[i].perms[k] = v;
   const s = S.staff[i];
   if (!s.id) return;
@@ -554,7 +652,52 @@ async function togglePerm(i, k, v) {
     renderSettings();
   }
 }
-async function addStaff() { const nEl = $('auth-name'), sEl = $('auth-shop'), pEl = $('auth-pin'), rEl = $('auth-role'), msg = $('staffmsg'); if (!msg) return; const name = nEl ? nEl.value.trim() : '', shop = sEl ? sEl.value : (SHOPS[0]||'Kiawara'), pin = pEl ? pEl.value.trim() : '', role = rEl ? rEl.value : 'cashier'; if (!name) { msg.textContent = '⚠️ Please enter a full name.'; msg.className = 'fail'; return; } if (!/^\d{4}$/.test(pin)) { msg.textContent = '⚠️ PIN must be exactly 4 digits.'; msg.className = 'fail'; return; } if (S.staff.find(s => s.pin === pin)) { msg.textContent = '⚠️ That PIN is already in use.'; msg.className = 'fail'; return; } msg.textContent = '⏳ Saving...'; msg.className = ''; const perms = role === 'admin' ? {...ADMINPERMS} : {...DEFPERMS}; try { const {error} = await db.from('staff').insert({name, shop, pin, role, perms}); if (error) throw new Error(error.message); const {data:f} = await db.from('staff').select('id,name,shop,pin,role,perms').eq('name', name).eq('pin', pin).limit(1); const fm = f && f[0] ? JSON.parse(JSON.stringify(f[0])) : null; S.staff.push(fm ? {id:fm.id, name:String(fm.name), shop:String(fm.shop), pin:String(fm.pin), role:String(fm.role), perms:{...fm.perms}} : {name, shop, pin, role, perms:{...perms}}); if (nEl) nEl.value = ''; if (pEl) pEl.value = ''; renderSettings(); const nm = $('staffmsg'); if (nm) { nm.textContent = '✅ ' + name + ' added!'; nm.className = 'succ'; } setupNav(); setTimeout(() => { const m = $('staffmsg'); if (m) m.textContent = ''; }, 4000); } catch(e) { msg.textContent = '❌ ' + e.message; msg.className = 'fail'; } }
+function toggleManagerShopPicker() {
+  const rEl = $('auth-role'), picker = $('manager-shops-picker');
+  if (!rEl || !picker) return;
+  picker.style.display = rEl.value === 'manager' ? 'block' : 'none';
+}
+
+async function addStaff() {
+  const nEl = $('auth-name'), sEl = $('auth-shop'), pEl = $('auth-pin'), rEl = $('auth-role'), msg = $('staffmsg');
+  if (!msg) return;
+  const isManagerCaller = sess.role === 'manager' && !sess.isAdmin;
+  const name = nEl ? nEl.value.trim() : '';
+  let shop = sEl ? sEl.value : (SHOPS[0] || 'Kiawara');
+  const pin = pEl ? pEl.value.trim() : '';
+  // A manager can ONLY ever create cashiers in their own shops - this is
+  // enforced here regardless of what the form happens to contain, not
+  // just by hiding the role dropdown in the UI.
+  let role = isManagerCaller ? 'cashier' : (rEl ? rEl.value : 'cashier');
+  let shops = [];
+  if (isManagerCaller) {
+    if (!sess.shops.includes(shop)) { msg.textContent = '⚠️ You can only add staff to your own shops.'; msg.className = 'fail'; return; }
+  }
+  if (role === 'manager') {
+    shops = Array.from(document.querySelectorAll('.mgr-shop-cb:checked')).map(cb => cb.value);
+    if (!shops.length) { msg.textContent = '⚠️ Pick at least one shop for this manager to cover.'; msg.className = 'fail'; return; }
+    shop = shops[0]; // kept for any code that still reads a single sess.shop
+  }
+  if (!name) { msg.textContent = '⚠️ Please enter a full name.'; msg.className = 'fail'; return; }
+  if (!/^\d{4}$/.test(pin)) { msg.textContent = '⚠️ PIN must be exactly 4 digits.'; msg.className = 'fail'; return; }
+  if (S.staff.find(s => s.pin === pin)) { msg.textContent = '⚠️ That PIN is already in use.'; msg.className = 'fail'; return; }
+  msg.textContent = '⏳ Saving...'; msg.className = '';
+  const perms = role === 'admin' ? {...ADMINPERMS} : role === 'manager' ? {...MANAGERPERMS} : {...DEFPERMS};
+  try {
+    const {error} = await db.from('staff').insert({name, shop, pin, role, perms, shops});
+    if (error) throw new Error(error.message);
+    const {data:f} = await db.from('staff').select('id,name,shop,pin,role,perms,shops').eq('name', name).eq('pin', pin).limit(1);
+    const fm = f && f[0] ? JSON.parse(JSON.stringify(f[0])) : null;
+    S.staff.push(fm ? {id:fm.id, name:String(fm.name), shop:String(fm.shop), pin:String(fm.pin), role:String(fm.role), perms:{...fm.perms}, shops:fm.shops || []} : {name, shop, pin, role, perms:{...perms}, shops});
+    if (nEl) nEl.value = ''; if (pEl) pEl.value = '';
+    renderSettings();
+    const nm = $('staffmsg'); if (nm) { nm.textContent = '✅ ' + name + ' added!'; nm.className = 'succ'; }
+    setupNav();
+    setTimeout(() => { const m = $('staffmsg'); if (m) m.textContent = ''; }, 4000);
+  } catch(e) {
+    msg.textContent = '❌ ' + e.message; msg.className = 'fail';
+  }
+}
 async function removeStaff(i) { const s = S.staff[i]; if (!s) return; const ok = await confirmModal.show('Remove Staff', 'Remove ' + s.name + '?', '🗑️ Remove', 'var(--red)', '👤'); if (!ok) return; try { if (s.id) { const {error} = await db.from('staff').eq('id', s.id).delete(); if (error) throw new Error(error.message); } else await db.from('staff').eq('name', s.name).delete(); S.staff.splice(i, 1); renderSettings(); pushNotif('🗑️ Staff removed', s.name + ' removed.'); } catch(e) { alert('Could not remove: ' + (e.message || 'Error')); } }
 async function changePin() {
   const cur = $('cur-pin').value, nw = $('new-pin').value, cf = $('conf-pin').value;
