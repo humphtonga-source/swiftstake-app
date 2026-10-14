@@ -93,7 +93,12 @@ function autoSaveShopState(shop) {
 }
 
 // ── FINANCE ──
-async function saveShopState(shop, skip) {
+// forceFull: for DELIBERATE whole-state replacements (end-of-day reset, admin
+// reset). Skips the merge guard entirely - a deliberately blank field must
+// overwrite the server, not be mistaken for "this tab never touched it"
+// (that mistake is what made resets and post-submit clears silently fail).
+// Returns true on success, false on failure, so callers can tell.
+async function saveShopState(shop, skip, forceFull) {
   if (!skip && shop === activeShop && !_resetting) saveInputs();
   const d = ensureShopDataExists(shop);
   if (!d) return;
@@ -139,7 +144,7 @@ async function saveShopState(shop, skip) {
     Object.keys(local).forEach(key => {
       const localVal = local[key];
       const touchedLocally = baseline ? !_deepEq(localVal, baseline[key]) : !_fieldIsBlank(key, localVal);
-      if (touchedLocally || !serverRow) {
+      if (forceFull || touchedLocally || !serverRow) {
         p[key] = localVal;
       } else {
         p[key] = serverRow[key];
@@ -156,7 +161,20 @@ async function saveShopState(shop, skip) {
     });
 
     const {data:u, error:e} = await db.from('shop_state').eq('shop', shop).update(p);
-    if (e || !u || !u.length) await db.from('shop_state').insert(p);
+    if (e) throw e;
+    if (!u || !u.length) {
+      // No existing row. Only create one for a shop that really exists in
+      // the shops table - otherwise a stale/mistyped name silently spawns
+      // a brand-new orphan shop_state row (the duplicate-shop mess).
+      const known = !S.shops || !S.shops.length || S.shops.some(x => x.name === shop);
+      if (!known) {
+        logError('saveShopState: refused to create row for unknown shop', new Error('unknown shop'), {shop});
+        showWarning('⚠️ "' + shop + '" is not a recognised shop - nothing was saved. Please reload the app.');
+        return false;
+      }
+      const {error: insErr} = await db.from('shop_state').insert(p);
+      if (insErr) throw insErr;
+    }
 
     // This save's outcome is now the new baseline for this shop.
     window._shopBaseline[shop] = _snapshotServerFields(p);
@@ -165,12 +183,14 @@ async function saveShopState(shop, skip) {
     if (window._shopDirty[shop] && window._shopDirty[shop].saveId === saveId) {
       delete window._shopDirty[shop];
     }
+    return true;
   } catch(e) {
     logError('saveShopState', e, {shop});
     // Leave the timestamp in place on failure - a stale realtime echo
     // overwriting an unsaved edit would be worse than briefly delaying
     // an incoming update - but it will still expire on its own shortly,
     // rather than locking this shop out of realtime updates indefinitely.
+    return false;
   }
 }
 
@@ -1187,7 +1207,8 @@ async function submitReport() {
   
   // Save the next day state to database immediately
   try {
-    await saveShopState(submittingShop, true);
+    const _nextOk = await saveShopState(submittingShop, true, true);
+    if (_nextOk === false) showWarning('⚠️ Report saved, but the new day could not be set up for ' + submittingShop + '. Please use Reset for this shop in Settings.');
   } catch(saveErr) {
     logError('submitReport: failed to save next day state', saveErr, {shop: submittingShop});
     // Still continue - the reset has happened in memory and DB will catch up
