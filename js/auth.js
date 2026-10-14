@@ -18,12 +18,25 @@ async function bootApp() {
       if (data && data.length) { 
         S.shops = JSON.parse(JSON.stringify(data)); 
         SHOPS = data.map(s => s.name); 
-      } 
+        // Remember the last list the server gave us, so a slow/failed
+        // load later uses THIS - never a hardcoded guess.
+        try { localStorage.setItem('swiftstake_shops_cache', JSON.stringify(data)); } catch(_) {}
+      } else { throw new Error('no shops returned'); }
     } catch(e) {
       logError('bootApp: shops loading', e);
-      showWarning('Could not load shops data from server. Using offline defaults.');
+      let cached = null;
+      try { cached = JSON.parse(localStorage.getItem('swiftstake_shops_cache') || 'null'); } catch(_) {}
+      if (cached && cached.length) {
+        S.shops = cached; SHOPS = cached.map(s => s.name);
+        showWarning('Could not reach the server for shops - using the last list this device saw.');
+      } else {
+        // No fresh list AND no saved one: do NOT fall back to made-up shop
+        // names. Writing data under a guessed name is what created the
+        // duplicate shops, so it is safer to stop here and say so.
+        SHOPS = [];
+        showWarning('Could not load your shops. Check your internet connection and reload the app.');
+      }
     }
-    if (!SHOPS.length) SHOPS = ['Kiawara','Nyeri','Gachatha'];
 
     SHOPS.forEach(sh => {
       if (!S.shopData[sh]) S.shopData[sh] = {
@@ -40,7 +53,6 @@ async function bootApp() {
   } catch(e) {
     setLoadMsg('Offline mode');
   } finally {
-    if (!SHOPS.length) SHOPS = ['Kiawara','Nyeri','Gachatha'];
     SHOPS.forEach(sh => {
       if (!S.shopData[sh]) S.shopData[sh] = {
         games:{stellar:{open:0,close:0,topups:[]},pilot:{open:0,close:0,topups:[]},spin:{open:0,close:0,topups:[]}},
@@ -61,7 +73,20 @@ async function bootApp() {
       if (savedSession && savedToken && jwtStillValid(savedToken)) {
         sess = JSON.parse(savedSession);
         sessToken = savedToken;
-        if (savedActiveShop) activeShop = savedActiveShop;
+        // A saved session/shop from before a rename or cleanup may point at a
+        // shop name that no longer exists - using it would quietly write data
+        // under a ghost shop. Drop it and make the person log in again.
+        const _staleShop = (!sess.isAdmin && sess.role !== 'manager' && !SHOPS.includes(sess.shop));
+        if (_staleShop || (SHOPS.length === 0)) {
+          ['swiftstake_session','swiftstake_token','swiftstake_activeShop'].forEach(k => localStorage.removeItem(k));
+          sess = null; sessToken = null;
+        } else if (savedActiveShop && SHOPS.includes(savedActiveShop)) {
+          activeShop = savedActiveShop;
+        } else {
+          localStorage.removeItem('swiftstake_activeShop');
+          activeShop = sess.isAdmin ? SHOPS[0] : sess.shop;
+        }
+        if (!sess) { throw new Error('stale session cleared'); }
         
         $('app').style.display = 'flex';
         $('app').style.flexDirection = 'column';
