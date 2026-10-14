@@ -2,7 +2,10 @@
 const SUPABASE_URL = 'https://inlafchehdzjiesetvvr.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_tA4igGd_AjqTR2NW5GJhsQ_mzC1aaAu';
 
-let SHOPS = ['Kiawara','Nyeri','Gachatha'];
+// Filled from the database at startup (see bootApp). Deliberately empty - a
+// hardcoded list of shop names goes stale the moment a shop is renamed, and
+// then silently saves data under the old name.
+let SHOPS = [];
 let GAMES = ['stellar','pilot','spin'];
 const COLORS = ['#3b82f6','#f59e0b','#22c55e','#a855f7','#ef4444'];
 const DEFPERMS  = {chat:true,finance:true,analytics:true,history:true,planning:true};
