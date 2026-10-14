@@ -188,6 +188,9 @@ async function loadAuthenticatedData() {
       S.shopData[sh].cashRecon = row.cash_recon || null;
       S.shopData[sh].cashMovements = Array.isArray(row.cash_movements) ? row.cash_movements : [];
       S.shopData[sh].openedAt = row.opened_at || null;
+      // Record what the server held at load time, so the save-time merge guard
+      // knows what this device has genuinely changed since.
+      if (typeof _snapshotServerFields === 'function') window._shopBaseline[sh] = _snapshotServerFields(row);
     });
   } catch(e) {
     logError('loadAuthenticatedData: shop state', e);
