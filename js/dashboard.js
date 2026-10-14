@@ -200,7 +200,8 @@ async function resetShopDayData(shop) {
   if (!ok) return;
   const blank = {}; GAMES.forEach(g => { blank[g] = {open:0, close:0, topups:[]}; });
   S.shopData[shop] = {games:blank, expenses:[], openingCash:0, cashRecon:null, cashMovements:[], openedAt:null};
-  await saveShopState(shop, true);
+  const _resetOk = await saveShopState(shop, true, true);
+  if (_resetOk === false) { alert('⚠️ The reset did NOT save to the server for ' + shop + '. Check your connection and try again.'); renderDashboard(); return; }
   await AuditLog.record('reset', shop, 'daily-data', 'admin manual reset', `${sess.name} reset ${shop}'s in-progress daily data`);
   pushNotif('🔄 Shop data reset', shop + ' is back to a blank slate for today');
   if (activeShop === shop) { renderFinance(); }
