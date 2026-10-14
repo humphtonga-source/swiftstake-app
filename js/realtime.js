@@ -67,9 +67,13 @@ function subscribeToDataChanges() {
       S.shopData[sh].games        = r.games && Object.keys(r.games).length ? r.games : S.shopData[sh].games;
       S.shopData[sh].expenses     = Array.isArray(r.expenses) ? r.expenses : S.shopData[sh].expenses;
       S.shopData[sh].openingCash  = r.opening_cash  != null ? r.opening_cash  : S.shopData[sh].openingCash;
-      S.shopData[sh].cashRecon    = r.cash_recon    != null ? r.cash_recon    : S.shopData[sh].cashRecon;
+      // null from the server means CLEARED (after a submit or reset) - it must clear the local copy too,
+      // not keep showing yesterday's locked reconciliation.
+      S.shopData[sh].cashRecon    = r.cash_recon || null;
       S.shopData[sh].cashMovements= Array.isArray(r.cash_movements) ? r.cash_movements : S.shopData[sh].cashMovements;
-      S.shopData[sh].openedAt     = r.opened_at     != null ? r.opened_at     : S.shopData[sh].openedAt;
+      S.shopData[sh].openedAt     = r.opened_at || null;
+      // Keep the merge-guard baseline in step with what the server actually holds.
+      if (typeof _snapshotServerFields === 'function') window._shopBaseline[sh] = _snapshotServerFields(r);
 
       if (r.games) Object.keys(r.games).forEach(g => { if (!GAMES.includes(g)) GAMES.push(g); });
 
@@ -85,9 +89,11 @@ function subscribeToDataChanges() {
         const _tag = document.activeElement && document.activeElement.tagName;
         const _isTyping = _tag === 'INPUT' || _tag === 'TEXTAREA';
         if (!_isTyping) {
-          renderCashMovLog();
-          updateCashMovEOD();
-          recalc();
+          // Full refresh (not just the cash log): after a submit or an admin
+          // reset the server clears everything, and any old numbers left in
+          // this screen's input boxes would otherwise be re-saved on the next
+          // recalc - bringing yesterday's data back.
+          loadShopData(sh);
         }
         // Flash the section so cashier notices the update
         const card = $('cashmov-log');
