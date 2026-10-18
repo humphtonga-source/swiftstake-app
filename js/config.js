@@ -113,3 +113,28 @@ let activeTurnoverPeriod = 'daily';
 let savedSummaries = [];
 let realtimeSub = null;
 let realtimeDataSub = null;
+
+
+// ── BUILD VERSION + DEVICE ID ──
+// Shown small in the corner of the screen and stamped on every shop save, so
+// we can tell which code a phone is really running and which device wrote
+// which record. Bump APP_VERSION whenever a fix is pushed.
+const APP_VERSION = '2026-10-16.1';
+const DEVICE_ID = (function() {
+  try {
+    let id = localStorage.getItem('swiftstake_device_id');
+    if (!id) { id = Math.random().toString(36).slice(2, 6).toUpperCase(); localStorage.setItem('swiftstake_device_id', id); }
+    return id;
+  } catch(e) { return 'NOID'; }
+})();
+(function() {
+  function show() {
+    if (document.getElementById('ver-tag')) return;
+    const d = document.createElement('div');
+    d.id = 'ver-tag';
+    d.textContent = 'v' + APP_VERSION + ' · ' + DEVICE_ID;
+    d.style.cssText = 'position:fixed;right:6px;bottom:3px;font-size:9px;opacity:.55;color:#9aa;z-index:99999;pointer-events:none;font-family:monospace;';
+    document.body.appendChild(d);
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', show); else show();
+})();
