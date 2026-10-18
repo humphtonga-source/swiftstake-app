@@ -140,7 +140,8 @@ async function saveShopState(shop, skip, forceFull) {
       logError('saveShopState: pre-save fetch failed, falling back to local values', fetchErr, {shop});
     }
 
-    const p = { shop, updated_at: new Date().toISOString() };
+    const p = { shop, updated_at: new Date().toISOString(),
+      last_writer: ((typeof sess !== 'undefined' && sess && sess.name) ? sess.name : '?') + ' | ' + (typeof DEVICE_ID !== 'undefined' ? DEVICE_ID : '?') + ' | ' + (typeof APP_VERSION !== 'undefined' ? APP_VERSION : '?') };
     Object.keys(local).forEach(key => {
       const localVal = local[key];
       const touchedLocally = baseline ? !_deepEq(localVal, baseline[key]) : !_fieldIsBlank(key, localVal);
