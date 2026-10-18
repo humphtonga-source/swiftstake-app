@@ -69,12 +69,19 @@ function _deepEq(a, b) {
 
 function _snapshotServerFields(row) {
   row = row || {};
+  // DEEP COPY - this snapshot must never share objects with the live screen
+  // state. The inputs edit games/expenses/cash movements in place; if the
+  // snapshot pointed at the same objects, every edit would silently change
+  // the snapshot too, the save would think "nothing changed here", throw the
+  // edit away and put the old server values back (the "data vanishes when I
+  // type" bug).
+  const copy = v => (v === undefined || v === null) ? v : JSON.parse(JSON.stringify(v));
   return {
-    games: row.games || {},
-    expenses: Array.isArray(row.expenses) ? row.expenses : [],
+    games: copy(row.games) || {},
+    expenses: Array.isArray(row.expenses) ? copy(row.expenses) : [],
     opening_cash: row.opening_cash || 0,
-    cash_recon: row.cash_recon || null,
-    cash_movements: Array.isArray(row.cash_movements) ? row.cash_movements : [],
+    cash_recon: copy(row.cash_recon) || null,
+    cash_movements: Array.isArray(row.cash_movements) ? copy(row.cash_movements) : [],
     opened_at: row.opened_at || null
   };
 }
