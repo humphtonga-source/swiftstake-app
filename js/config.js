@@ -119,7 +119,7 @@ let realtimeDataSub = null;
 // Shown small in the corner of the screen and stamped on every shop save, so
 // we can tell which code a phone is really running and which device wrote
 // which record. Bump APP_VERSION whenever a fix is pushed.
-const APP_VERSION = '2026-10-16.1';
+const APP_VERSION = '2026-10-16.2';
 const DEVICE_ID = (function() {
   try {
     let id = localStorage.getItem('swiftstake_device_id');
